@@ -1,0 +1,41 @@
+# --- Python ----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# --- Virtual envs ----------------------------------------------------------
+.venv/
+venv/
+env/
+condaenv/
+
+# --- Runtime data ----------------------------------------------------------
+chroma_db/
+cache/
+chat_history.json
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+localbrain.db
+vault_index.json
+
+# --- Env / secrets ---------------------------------------------------------
+.env
+
+# --- IDE / OS --------------------------------------------------------------
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# --- Test / eval artifacts -------------------------------------------------
+.pytest_cache/
+evals/results.json
+
+# --- Local-only working docs / config --------------------------------------
+localbrainnotesprd.md
+opencode.jsonc

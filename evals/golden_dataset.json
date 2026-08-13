@@ -1,0 +1,82 @@
+[
+    {
+        "question": "What decisions were made in the Q3 design review?",
+        "ground_truth": "Three key decisions: (1) the onboarding flow will use a three-step wizard, (2) the email-required gate is dropped to lift activation by ~8%, and (3) dark mode ships in the same release as the wizard."
+    },
+    {
+        "question": "Which note links to the analytics proposal?",
+        "ground_truth": "The Q3 Design Review note links to the Analytics Proposal via a wikilink under Open Questions."
+    },
+    {
+        "question": "What analytics events are proposed for onboarding?",
+        "ground_truth": "Three events: onboarding_started (wizard step one loads), template_selected (user picks a template), and onboarding_completed (final step confirmed)."
+    },
+    {
+        "question": "What is the analytics event naming convention?",
+        "ground_truth": "All events use snake_case with a feature prefix. The onboarding prefix is 'onboarding'."
+    },
+    {
+        "question": "How should telemetry comply with privacy?",
+        "ground_truth": "Telemetry must be privacy-compliant with no PII in event properties."
+    },
+    {
+        "question": "What are the action items from the Q3 design review?",
+        "ground_truth": "Three action items: update the Figma wireframes to remove the email gate, prototype the template-selection step with 3 sample templates, and schedule a cross-functional review before the sprint cut-off."
+    },
+    {
+        "question": "What is local-first software?",
+        "ground_truth": "Local-first software keeps the user's data on their device, with sync happening in the background. Users get the availability of local apps and the collaboration of cloud apps."
+    },
+    {
+        "question": "What are CRDTs and why do they matter?",
+        "ground_truth": "Conflict-free Replicated Data Types (CRDTs) allow concurrent edits to converge without a central server. They matter for a note app because two devices can edit the same note offline and reconcile later."
+    },
+    {
+        "question": "What are the two main families of CRDTs?",
+        "ground_truth": "State-based (merge full state) and operation-based (merge deltas)."
+    },
+    {
+        "question": "What is the reading log author interested in trying?",
+        "ground_truth": "Building a small sync layer using a CRDT library on top of plain markdown files, keeping the vault as the source of truth and treating the sync log as derived state."
+    },
+    {
+        "question": "What is the key conflict in local-first software?",
+        "ground_truth": "The key conflict is between offline access and multi-device sync."
+    },
+    {
+        "question": "Why are Obsidian vaults relevant to local-first software?",
+        "ground_truth": "Obsidian vaults are already local-first markdown, making them a natural fit for a local-first note syncing approach."
+    },
+    {
+        "question": "What is the connection between local-first software and the onboarding design?",
+        "ground_truth": "A local-first pitch might actually increase onboarding friction, which is something to consider when reducing friction in the onboarding flow."
+    },
+    {
+        "question": "Hello, how are you?",
+        "ground_truth": "This is a chit-chat question that does not require vault retrieval and should be answered directly."
+    },
+    {
+        "question": "What is the square root of 144?",
+        "ground_truth": "This is a general knowledge question not related to the vault content."
+    },
+    {
+        "question": "Compare the privacy concerns in analytics with the privacy model of local-first software.",
+        "ground_truth": "Both touch privacy from different angles: analytics must avoid PII in event properties (a server-side concern), while local-first keeps data on-device by design (reducing server-side exposure). Together they suggest a system that tracks product usage without compromising user data locality."
+    },
+    {
+        "question": "How could CRDTs help with the analytics problem?",
+        "ground_truth": "CRDTs could enable conflict-free merging of locally-computed analytics aggregations across devices without sending raw user data to a central server, aligning with the privacy-compliant telemetry requirement."
+    },
+    {
+        "question": "What dark mode release timeline was discussed?",
+        "ground_truth": "Dark mode will ship in the same release as the onboarding wizard, not as a follow-up patch."
+    },
+    {
+        "question": "What is the topic of note3?",
+        "ground_truth": "The Reading Log: Local-First Software note covers local-first software concepts including CRDTs and local sync."
+    },
+    {
+        "question": "Summarize everything in the vault.",
+        "ground_truth": "The vault contains notes on a Q3 Design Review (onboarding wizard, dark mode, analytics proposal with privacy-compliant telemetry) and a Reading Log on local-first software (CRDTs, Obsidian vaults as local-first markdown, privacy-by-design)."
+    }
+]
