@@ -47,13 +47,13 @@ def get_llm(
                 f"Ollama server unreachable at {settings.OLLAMA_BASE_URL}. "
                 "Start the Ollama daemon or switch LLM_PROVIDER to a cloud provider."
             )
-        from langchain_community.llms import Ollama as OllamaLLM
-        from langchain_community.chat_models import ChatOllama
+        from langchain_ollama import ChatOllama
 
-        # ChatOllama is the preferred wrapper for conversational use-cases.
         return ChatOllama(
             model=model,
             temperature=temperature,
+            num_predict=max_tokens,  # cap per-call output so verbose local
+            # models can't run away and tie up Ollama's single slot
             base_url=settings.OLLAMA_BASE_URL,
             **kwargs,
         )

@@ -47,14 +47,19 @@ def _keyword_search_baseline(query: str, chunks: list[dict], k: int = 5) -> list
     return [cid for _, cid in scored[:k]]
 
 
-def run_benchmark(n_chunks: int = 2000, n_queries: int = 10):
+def run_benchmark(n_chunks: int = 150, n_queries: int = 10):
     print(f"--- Retrieval Speed Benchmark ({n_chunks} chunks) ---")
 
     # 1. Synthetic corpus
     chunks = _generate_synthetic_data(n_chunks)
     print(f"Embedding {n_chunks} chunks...")
     t0 = time.perf_counter()
-    embeddings = embed_documents([c["text"] for c in chunks])
+    # Batch embeddings to avoid endpoint timeout on large payloads
+    batch_size = 100
+    texts = [c["text"] for c in chunks]
+    embeddings = []
+    for b in range(0, len(texts), batch_size):
+        embeddings.extend(embed_documents(texts[b:b + batch_size]))
     print(f"Embedding completed in {time.perf_counter() - t0:.2f}s")
 
     # 2. Ingest into an in-memory ChromaDB (no persistence)

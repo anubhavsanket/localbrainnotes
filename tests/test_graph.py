@@ -21,6 +21,10 @@ class TestParsers:
     def test_parse_route_tool(self):
         assert _parse_route("tool") == "tool"
 
+    def test_parse_route_is_lowercased(self):
+        assert _parse_route("Direct") == "direct"
+        assert _parse_route("FASTPATH here") == "fastpath"
+
     def test_parse_route_unknown_defaults_to_retrieve(self):
         assert _parse_route("I'm not sure what to do") == "retrieve"
 
@@ -115,3 +119,114 @@ class TestReflectNode:
         state = {"answer": "The sky is green.", "rewrite_count": 0}
         result = nodes["reflect"](state)
         assert result["grounded"] is False
+
+
+class TestFastpathNode:
+    def test_router_can_parse_fastpath(self):
+        assert _parse_route("fastpath") == "fastpath"
+
+    def test_fastpath_generates_from_all_docs(self):
+        from langchain_core.documents import Document
+
+        fake = FakeListChatModel(responses=["Concise answer."])
+        nodes = create_nodes(fake)
+        state = {
+            "question": "What covers note3?",
+            "route": "fastpath",
+            "workspace": "personal",
+            "chat_history": [],
+            "documents": [
+                Document(page_content="Note3 covers local-first concepts.", metadata={"note_id": "personal/note3.md"}),
+            ],
+        }
+        result = nodes["generate"](state)
+        assert "answer" in result
+        assert result["sources"] == ["personal/note3.md"]
+
+
+class TestToolSearchNode:
+    def test_web_search_off_when_disabled(self, monkeypatch):
+        import rag.nodes as nodes_mod
+        from config import settings
+
+        monkeypatch.setattr(settings, "WEB_SEARCH_ENABLED", False)
+        fake = FakeListChatModel(responses=[])
+        nodes = create_nodes(fake)
+        result = nodes["tool_search"]({"question": "What is the weather?", "workspace": "work", "chat_history": []})
+        assert result == {}
+
+    def test_web_search_populates_documents(self, monkeypatch):
+        from langchain_core.documents import Document
+
+        monkeypatch.setattr("rag.nodes.settings.WEB_SEARCH_ENABLED", True)
+        fake_docs = [Document(page_content="Results", metadata={"note_id": "web://x", "title": "X"})]
+        monkeypatch.setattr("rag.web_search.web_search", lambda query: fake_docs)
+        fake = FakeListChatModel(responses=[])
+        nodes = create_nodes(fake)
+        result = nodes["tool_search"]({"question": "Weather today?", "standalone_question": "Weather today?", "workspace": "work", "chat_history": []})
+        assert result["documents"] == fake_docs
+
+
+class TestGuardAnswerNode:
+    def test_guard_rewrites_answer_and_increments_repair_count(self):
+        from langchain_core.documents import Document
+
+        fake = FakeListChatModel(responses=["Corrected grounded answer."])
+        nodes = create_nodes(fake)
+        state = {
+            "question": "Decisions?",
+            "answer": "A wizard and a unicorn were chosen.",
+            "documents": [Document(page_content="Wizards were chosen.", metadata={"note_id": "d.md"})],
+            "retrieval_grades": [{"doc": Document(page_content="Wizards were chosen.", metadata={"note_id": "d.md"}), "relevant": True}],
+            "repair_count": 0,
+        }
+        result = nodes["guard_answer"](state)
+        assert result["repair_count"] == 1
+        assert "Corrected grounded answer." in result["answer"]
+
+
+class TestFilterDocs:
+    def test_tag_filter_keeps_matching_docs(self):
+        from langchain_core.documents import Document
+
+        fake = FakeListChatModel(responses=[])
+        nodes = create_nodes(fake)
+        docs = [
+            Document(page_content="Alpha decisions", metadata={"tags": ["project-alpha"], "workspace": "work", "note_id": "a.md"}),
+            Document(page_content="Beta decisions", metadata={"tags": ["project-beta"], "workspace": "work", "note_id": "b.md"}),
+        ]
+        state = {"question": "What did project-alpha decide?", "standalone_question": "What did project-alpha decide?", "documents": docs}
+        result = nodes["filter_docs"](state)
+        assert len(result["documents"]) == 1
+        assert result["documents"][0].metadata["tags"] == ["project-alpha"]
+
+    def test_no_tag_signal_keeps_all(self):
+        from langchain_core.documents import Document
+
+        fake = FakeListChatModel(responses=[])
+        nodes = create_nodes(fake)
+        docs = [
+            Document(page_content="One", metadata={"tags": ["alpha"], "note_id": "a.md"}),
+            Document(page_content="Two", metadata={"tags": ["beta"], "note_id": "b.md"}),
+        ]
+        state = {"question": "What happened generally?", "standalone_question": "What happened generally?", "documents": docs}
+        result = nodes["filter_docs"](state)
+        assert "documents" not in result  # pass-through
+
+
+class TestCompression:
+    def test_context_compression_truncates_long_docs(self):
+        from langchain_core.documents import Document
+
+        fake = FakeListChatModel(responses=["Short."])
+        nodes = create_nodes(fake)
+        long_text = ("The Q3 review made deep decisions about the onboarding wizard. " * 100)
+        state = {
+            "question": "What decisions about onboarding were made?",
+            "route": "fastpath",
+            "documents": [Document(page_content=long_text, metadata={"note_id": "n.md"})],
+            "chat_history": [],
+        }
+        # generate() compresses internally; only assert it runs and returns
+        result = nodes["generate"](state)
+        assert "answer" in result

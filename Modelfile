@@ -1,0 +1,4 @@
+# LocalBrain's custom modelfile — aliases the stock phi4-mini with the
+# project's chosen default context/template parameters.
+#   ollama create phi4-mini-localbrain -f Modelfile
+FROM phi4-mini:latest

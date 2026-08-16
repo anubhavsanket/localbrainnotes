@@ -12,7 +12,11 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
 from config import settings
 
-_DB_PATH = Path(settings.CHROMA_PERSIST_DIR).parent / "localbrain.db"
+
+def _default_db_path() -> Path:
+    """Resolve the SQLite DB path lazily so tests can patch
+    ``settings.CHROMA_PERSIST_DIR`` after import."""
+    return Path(settings.CHROMA_PERSIST_DIR).parent / "localbrain.db"
 
 
 class WorkspaceChatMemoryManager:
@@ -26,8 +30,10 @@ class WorkspaceChatMemoryManager:
         self,
         workspace: str = "default",
         window_size: int = settings.MEMORY_WINDOW_SIZE,
-        db_path: str | Path = _DB_PATH,
+        db_path: str | Path | None = None,
     ):
+        if db_path is None:
+            db_path = _default_db_path()
         self.session_id = workspace
         self.window_size = window_size
         self._db_path = str(db_path)

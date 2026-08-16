@@ -16,10 +16,12 @@ from typing import Optional
 
 from langchain_core.embeddings import Embeddings
 
-from config import settings
+from config import settings, PROJECT_ROOT
 
-EMBEDDING_CACHE_DIR = "./cache/embeddings"
-EMBED_CACHE_FILE = "./cache/embeddings.json"
+# Cache lives under the repo root so it is found regardless of the CWD the
+# server is launched from (README quick-start runs `python main.py` from backend/).
+EMBEDDING_CACHE_DIR = str(PROJECT_ROOT / "cache" / "embeddings")
+EMBED_CACHE_FILE = str(PROJECT_ROOT / "cache" / "embeddings.json")
 
 
 # ---------------------------------------------------------------------------
@@ -89,7 +91,7 @@ def _build_underlying_embeddings() -> Embeddings:
     provider = settings.EMBEDDING_PROVIDER
 
     if provider == "ollama":
-        from langchain_community.embeddings import OllamaEmbeddings
+        from langchain_ollama import OllamaEmbeddings
 
         return OllamaEmbeddings(
             model=settings.EMBEDDING_MODEL,

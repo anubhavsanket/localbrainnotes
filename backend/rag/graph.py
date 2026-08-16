@@ -2,9 +2,15 @@
 
 ``build_graph()`` produces a compiled ``StateGraph`` wired as:
 
-    START → router → [retrieve | direct]
-        retrieve → grade_docs → [any relevant → generate → reflect → [grounded → END | rewrite]]
-        direct → generate (no context) → END
+    START → router → [conditional]
+      "retrieve" → retrieve → filter_docs → grade_docs → [conditional]
+        any relevant → generate → reflect → [conditional]
+          grounded → END
+          not grounded → guard_answer → END (rewrite in place, once)
+        none relevant → query_rewrite → retrieve (cycle, max 3)
+      "fastpath" → retrieve → generate → END  (skip grade/rewrite/reflect)
+      "direct"   → generate (no context) → END
+      "tool"     → tool_search → generate → END
 
 The graph is parameterized by an LLM.  ``get_agent_graph()`` is the module-
 level convenience function that builds it once with the default LLM from
@@ -21,6 +27,7 @@ from rag.nodes import create_nodes
 from rag.state import AgentState
 
 _REWRITE_MAX = 3
+_GENERATE_ROUTES = {"direct", "fastpath", "tool"}  # skip reflection on these
 
 
 def build_graph(llm: BaseChatModel) -> StateGraph:
@@ -31,10 +38,13 @@ def build_graph(llm: BaseChatModel) -> StateGraph:
     # Register nodes
     graph.add_node("router", nodes["router"])
     graph.add_node("retrieve", nodes["retrieve"])
+    graph.add_node("filter_docs", nodes["filter_docs"])
     graph.add_node("grade_docs", nodes["grade_docs"])
     graph.add_node("query_rewrite", nodes["query_rewrite"])
     graph.add_node("generate", nodes["generate"])
     graph.add_node("reflect", nodes["reflect"])
+    graph.add_node("guard_answer", nodes["guard_answer"])
+    graph.add_node("tool_search", nodes["tool_search"])
 
     # Edges
     graph.add_edge(START, "router")
@@ -44,12 +54,26 @@ def build_graph(llm: BaseChatModel) -> StateGraph:
         lambda state: state["route"],
         {
             "retrieve": "retrieve",
+            "fastpath": "retrieve",
             "direct": "generate",
-            "tool": "generate",  # deferred — treat as generate for now
+            "tool": "tool_search",
         },
     )
 
-    graph.add_edge("retrieve", "grade_docs")
+    graph.add_edge("tool_search", "generate")
+
+    # retrieve → filter (tag-aware) → grade only in the slow path;
+    # fastpath jumps straight to generate
+    graph.add_conditional_edges(
+        "retrieve",
+        lambda state: "generate" if state.get("route") == "fastpath" else "filter_docs",
+        {
+            "generate": "generate",
+            "filter_docs": "filter_docs",
+        },
+    )
+
+    graph.add_edge("filter_docs", "grade_docs")
 
     graph.add_conditional_edges(
         "grade_docs",
@@ -62,16 +86,29 @@ def build_graph(llm: BaseChatModel) -> StateGraph:
 
     graph.add_edge("query_rewrite", "retrieve")  # cycle back to retrieve
 
-    graph.add_edge("generate", "reflect")
+    # generate → skip reflection on direct/fastpath/tool routes
+    graph.add_conditional_edges(
+        "generate",
+        lambda state: (
+            "end" if state.get("route") in _GENERATE_ROUTES else "reflect"
+        ),
+        {
+            "reflect": "reflect",
+            "end": END,
+        },
+    )
 
     graph.add_conditional_edges(
         "reflect",
         _after_reflect,
         {
+            "guard": "guard_answer",
             "rewrite": "query_rewrite",
             "end": END,
         },
     )
+
+    graph.add_edge("guard_answer", END)
 
     return graph.compile(checkpointer=MemorySaver())
 
@@ -92,10 +129,15 @@ def _after_grade(state: AgentState) -> str:
 
 
 def _after_reflect(state: AgentState) -> str:
-    """If the answer is grounded, return it. Otherwise rewrite and try once
-    more (up to the rewrite limit)."""
+    """If the answer is grounded, return it. Otherwise rewrite in place once
+    (guard), and if the draft still fails, re-retrieve (up to the rewrite cap)."""
     if state.get("grounded") is True:
         return "end"
+    if not state.get("documents") and not state.get("retrieval_grades"):
+        # Chit-chat/direct answer with no context to repair against: return.
+        return "end"
+    if state.get("repair_count", 0) < 1:
+        return "guard"  # one in-place rewrite attempt
     if state.get("rewrite_count", 0) >= _REWRITE_MAX:
         return "end"
     return "rewrite"

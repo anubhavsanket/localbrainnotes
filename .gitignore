@@ -35,6 +35,16 @@ Thumbs.db
 # --- Test / eval artifacts -------------------------------------------------
 .pytest_cache/
 evals/results.json
+evals/_gen_cache.json
+
+# --- Desktop shell (Tauri + React) -----------------------------------------
+desktop/node_modules/
+desktop/dist/
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+
+# --- OpenCode local tooling -------------------------------------------------
+.opencode/
 
 # --- Local-only working docs / config --------------------------------------
 localbrainnotesprd.md

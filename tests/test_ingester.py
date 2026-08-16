@@ -67,6 +67,43 @@ class TestChunkVaultFile:
         chunks = chunk_vault_file(str(empty), str(tmp_path))
         assert chunks == []
 
+    def test_tagless_note_encodes_empty_tags_as_string(self, tmp_path):
+        """ChromaDB rejects empty *list* metadata; tagless notes must index
+        with tags encoded as '' (regression for the ingest failure)."""
+        from rag.ingester.vault import chunk_vault_file
+
+        note = tmp_path / "tagless.md"
+        note.write_text("# Tagless\n\nNo frontmatter at all.")
+        chunks = chunk_vault_file(str(note), str(tmp_path))
+
+        assert len(chunks) == 1
+        meta = chunks[0]["metadata"]
+        assert meta["tags"] == ""  # not []
+        assert not isinstance(meta["tags"], list)
+        assert meta["workspace"] == "default"
+
+    def test_upsert_accepts_tagged_and_tagless(self, tmp_path, fake_embeddings, in_memory_client):
+        """The full upsert path (as used by ingest_file) must tolerate notes
+        with and without frontmatter tags — previously tagless notes raised
+        "Expected metadata list value for key 'tags' to be non-empty"."""
+        import rag.vectorstore as vs_mod
+
+        original_store = vs_mod.vectorstore
+        vs_mod.vectorstore = vs_mod.LocalBrainVectorStore(client=in_memory_client)
+
+        try:
+            from rag.ingester.vault import ingest_file
+
+            tagged = tmp_path / "tagged.md"
+            tagged.write_text("---\ntitle: T\ntags: [a]\n---\n# T\n\nContent.")
+            tagless = tmp_path / "tagless.md"
+            tagless.write_text("# No tags\n\nContent.")
+
+            assert ingest_file(str(tagged), str(tmp_path)) > 0
+            assert ingest_file(str(tagless), str(tmp_path)) > 0
+        finally:
+            vs_mod.vectorstore = original_store
+
 
 class TestIngestVault:
     def test_counts_all_notes(self, sample_vault_path, fake_embeddings):

@@ -80,7 +80,11 @@ def chunk_vault_file(file_path: str, base_path: str) -> list[dict]:
 
     title = meta.get("title") or path.stem
     workspace = str(meta.get("workspace") or DEFAULT_WORKSPACE)
-    tags = meta.get("tags") or []
+    # ChromaDB rejects empty *lists* in metadata ("must be non-empty"), but
+    # accepts an empty string. Encode tagless notes as '' so they index fine.
+    tags = meta.get("tags") or ""
+    if isinstance(tags, list):
+        tags = tags if tags else ""
     created = meta.get("created")
 
     header_splitter = MarkdownHeaderTextSplitter(headers_to_split_on=HEADERS_TO_SPLIT_ON)

@@ -128,6 +128,67 @@
       color: var(--muted);
     }
 
+    /* --- markdown-rendered answer body ----------------------------------- */
+    .msg .md { overflow-wrap: break-word; }
+    .msg .md > *:first-child { margin-top: 0; }
+    .msg .md > *:last-child { margin-bottom: 0; }
+    .msg .md p { margin: 6px 0; }
+    .msg .md h1, .msg .md h2, .msg .md h3, .msg .md h4 {
+      margin: 10px 0 6px;
+      line-height: 1.3;
+      letter-spacing: -0.01em;
+    }
+    .msg .md h1 { font-size: 1.15rem; }
+    .msg .md h2 { font-size: 1.05rem; }
+    .msg .md h3 { font-size: 0.97rem; }
+    .msg .md ul, .msg .md ol { margin: 6px 0; padding-left: 22px; }
+    .msg .md li { margin: 3px 0; }
+    .msg .md code {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 0.85em;
+      font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+    }
+    .msg .md pre {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin: 8px 0;
+      overflow-x: auto;
+    }
+    .msg .md pre code {
+      background: none;
+      border: none;
+      padding: 0;
+      font-size: 0.85rem;
+    }
+    .msg .md blockquote {
+      border-left: 3px solid var(--accent);
+      padding-left: 12px;
+      margin: 8px 0;
+      color: var(--muted);
+    }
+    .msg .md a { color: var(--accent); text-decoration: none; }
+    .msg .md a:hover { text-decoration: underline; }
+    .msg .md table {
+      border-collapse: collapse;
+      margin: 8px 0;
+      font-size: 0.85rem;
+      max-width: 100%;
+      overflow-x: auto;
+    }
+    .msg .md th, .msg .md td {
+      border: 1px solid var(--border);
+      padding: 5px 10px;
+      text-align: left;
+    }
+    .msg .md th { background: var(--bg); font-weight: 600; }
+    .msg .md strong { font-weight: 600; }
+    .msg .md em { font-style: italic; }
+
     /* --- input ------------------------------------------------------------ */
     #input-bar {
       padding: 12px 20px;
@@ -194,6 +255,28 @@
     const wsSel   = document.getElementById('workspace-select');
 
     /* ---- helpers --------------------------------------------------------- */
+    function renderSources(div, sources) {
+      if (!sources || !sources.length) return;
+      let srcWrap = div.querySelector('.sources');
+      if (!srcWrap) {
+        srcWrap = document.createElement('div');
+        srcWrap.className = 'sources';
+        div.appendChild(srcWrap);
+      }
+      srcWrap.innerHTML = '';
+      const details = document.createElement('details');
+      const summary = document.createElement('summary');
+      summary.textContent = `Sources (${sources.length})`;
+      details.appendChild(summary);
+      sources.forEach(s => {
+        const tag = document.createElement('span');
+        tag.className = 'tag';
+        tag.textContent = s;
+        details.appendChild(tag);
+      });
+      srcWrap.appendChild(details);
+    }
+
     function addMsg(role, content, sources) {
       const div = document.createElement('div');
       div.className = `msg ${role}`;
@@ -204,29 +287,132 @@
       div.appendChild(label);
 
       const body = document.createElement('div');
-      body.textContent = content;
+      body.className = 'md';
       div.appendChild(body);
 
       if (sources && sources.length) {
-        const srcWrap = document.createElement('div');
-        srcWrap.className = 'sources';
-        const details = document.createElement('details');
-        const summary = document.createElement('summary');
-        summary.textContent = `Sources (${sources.length})`;
-        details.appendChild(summary);
-        sources.forEach(s => {
-          const tag = document.createElement('span');
-          tag.className = 'tag';
-          tag.textContent = s;
-          details.appendChild(tag);
-        });
-        srcWrap.appendChild(details);
-        div.appendChild(srcWrap);
+        renderSources(div, sources);
       }
 
       chat.appendChild(div);
       chat.scrollTop = chat.scrollHeight;
       return div;
+    }
+
+    /* ---- minimal, dependency-free Markdown renderer --------------------- */
+    // Renders the (already safe) markdown the LLM produces: headings, lists,
+    // bold/italic, inline code, fenced code blocks, tables, links, quotes.
+    // HTML in the response is escaped first, so this is XSS-safe.
+
+    function escapeHtml(s) {
+      return s
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function inlineMd(s) {
+      // escape first, then apply inline formatting
+      return escapeHtml(s)
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" rel="noopener">$1</a>');
+    }
+
+    function renderMarkdown(md) {
+      if (!md) return '';
+      const lines = md.split('\n');
+      const out = [];
+      let i = 0;
+      let listType = null;   // 'ul' | 'ol' | null
+      let inCode = false;
+      let codeBuf = [];
+      let table = [];        // accumulating table rows
+
+      function closeList() {
+        if (listType) { out.push(`</${listType}>`); listType = null; }
+      }
+      function flushTable() {
+        if (!table.length) return;
+        let h = '<table>';
+        table.forEach((row, r) => {
+          h += '<tr>';
+          row.forEach(cell => {
+            const tag = r === 0 ? 'th' : 'td';
+            h += `<${tag}>${inlineMd(cell.trim())}</${tag}>`;
+          });
+          h += '</tr>';
+        });
+        out.push(h + '</table>');
+        table = [];
+      }
+
+      for (; i < lines.length; i++) {
+        const raw = lines[i];
+        const line = raw.trimEnd();
+
+        // fenced code blocks
+        if (line.trim().startsWith('```')) {
+          closeList(); flushTable();
+          if (inCode) {
+            out.push('<pre><code>' + escapeHtml(codeBuf.join('\n')) + '</code></pre>');
+            codeBuf = []; inCode = false;
+          } else { inCode = true; }
+          continue;
+        }
+        if (inCode) { codeBuf.push(line); continue; }
+
+        // headers
+        const h = /^(#{1,4})\s+(.*)$/.exec(line);
+        if (h) {
+          closeList(); flushTable();
+          const level = h[1].length;
+          out.push(`<h${level}>${inlineMd(h[2])}</h${level}>`);
+          continue;
+        }
+
+        // tables (adjacent pipe lines, with a separator row)
+        if (line.startsWith('|') && line.endsWith('|')) {
+          closeList();
+          const cells = line.slice(1, -1).split('|');
+          const isSep = cells.every(c => /^:?-{3,}:?$/.test(c.trim()));
+          if (isSep) continue;  // skip the |---| separator, keep header row
+          table.push(cells);
+          continue;
+        }
+        flushTable();
+
+        // blockquote
+        if (line.startsWith('> ')) {
+          closeList();
+          out.push(`<blockquote>${inlineMd(line.slice(2))}</blockquote>`);
+          continue;
+        }
+
+        // unordered / ordered lists (grouped)
+        let m = /^[-*]\s+(.*)$/.exec(line.trim());
+        if (m) {
+          if (listType !== 'ul') { closeList(); out.push('<ul>'); listType = 'ul'; }
+          out.push(`<li>${inlineMd(m[1])}</li>`);
+          continue;
+        }
+        m = /^\d+\.\s+(.*)$/.exec(line.trim());
+        if (m) {
+          if (listType !== 'ol') { closeList(); out.push('<ol>'); listType = 'ol'; }
+          out.push(`<li>${inlineMd(m[1])}</li>`);
+          continue;
+        }
+        closeList();
+
+        // blank line: paragraph break
+        if (!line.trim()) continue;
+        out.push(`<p>${inlineMd(line)}</p>`);
+      }
+      closeList(); flushTable();
+      if (inCode) { out.push('<pre><code>' + escapeHtml(codeBuf.join('\n')) + '</code></pre>'); }
+      return out.join('\n');
     }
 
     /* ---- auto-resize textarea -------------------------------------------- */
@@ -250,8 +436,8 @@
       addMsg('user', text);
 
       const ws = wsSel.value;
-      const aiDiv = addMsg('ai', '…');
-      const pre = aiDiv.querySelector('div:nth-child(2)');
+      const aiDiv = addMsg('ai', '');
+      const body = aiDiv.querySelector('div.md');
       let full = '';
 
       try {
@@ -260,23 +446,56 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ question: text, workspace: ws }),
         });
+
+        if (!res.ok) {
+          let errText = `HTTP ${res.status}`;
+          try {
+            const errJson = await res.json();
+            if (errJson.detail) errText = typeof errJson.detail === 'string' ? errJson.detail : JSON.stringify(errJson.detail);
+          } catch {}
+          body.textContent = `Error: ${errText}`;
+          sending = false;
+          btnSend.disabled = false;
+          input.focus();
+          return;
+        }
+
         const reader = res.body.getReader();
         const dec = new TextDecoder();
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          const raw = dec.decode(value, { stream: true });
-          for (const line of raw.split('\n')) {
-            if (!line.startsWith('data: ')) continue;
+        let buffer = '';
+
+        function processLines(lines) {
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith('data: ')) continue;
             try {
-              const msg = JSON.parse(line.slice(6));
-              if (msg.type === 'token') { full += msg.data; pre.textContent = full; }
+              const msg = JSON.parse(trimmed.slice(6));
+              if (msg.type === 'token') {
+                full += msg.data;
+                body.innerHTML = renderMarkdown(full);
+              } else if (msg.type === 'source_documents') {
+                renderSources(aiDiv, msg.data);
+              }
             } catch {}
           }
         }
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            if (buffer.trim()) {
+              processLines(buffer.split('\n'));
+            }
+            break;
+          }
+          buffer += dec.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop(); // carry incomplete line over to next chunk
+          processLines(lines);
+        }
       } catch (err) {
         full = `Error: ${err.message}`;
-        pre.textContent = full;
+        body.textContent = full;
       }
 
       sending = false;

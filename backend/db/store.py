@@ -9,7 +9,8 @@ import json
 from pathlib import Path
 from typing import Optional
 
-_INDEX_PATH = Path("./db/vault_index.json")
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_INDEX_PATH = _PROJECT_ROOT / "db" / "vault_index.json"
 
 _index: dict[str, dict] = {}
 

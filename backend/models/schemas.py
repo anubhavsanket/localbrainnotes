@@ -14,6 +14,13 @@ class NoteUpdate(BaseModel):
     workspace: str = "default"
 
 
+class NoteWrite(BaseModel):
+    """Payload for creating/updating a note file in the vault."""
+    path: str
+    content: str
+    workspace: str = "default"
+
+
 class QueryRequest(BaseModel):
     question: str
     workspace: str = "default"

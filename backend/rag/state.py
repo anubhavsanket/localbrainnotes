@@ -19,10 +19,11 @@ class AgentState(TypedDict, total=False):
 
     # --- internal ----------------------------------------------------------
     standalone_question: str  # after condense / rewrite
-    route: str  # "retrieve" | "direct" | "tool"
-    documents: list[Document]  # retrieved docs
+    route: str  # "retrieve" | "direct" | "tool" | "fastpath"
+    documents: list[Document]  # retrieved docs (vault or web)
     retrieval_grades: list[dict]  # [{"doc": Document, "relevant": bool}, ...]
     rewrite_count: int  # cycle guard (max 3)
+    repair_count: int  # groundedness-guard cycle guard (max 1)
 
     # --- outbound (to caller) ----------------------------------------------
     answer: str  # final or draft

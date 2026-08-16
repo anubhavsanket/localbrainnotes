@@ -7,6 +7,7 @@ is launched on startup to keep the vector index in sync with the vault on disk.
 import asyncio
 import json
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -20,6 +21,7 @@ from config import settings
 from models.schemas import (
     NoteCreate,
     NoteUpdate,
+    NoteWrite,
     QueryRequest,
     QueryResponse,
     WorkspaceResponse,
@@ -29,7 +31,28 @@ from models.schemas import (
 # App + middleware
 # ---------------------------------------------------------------------------
 
-app = FastAPI(title="LocalBrain", version="0.1.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Start the vault watcher on startup; stop it cleanly on shutdown."""
+    global _watcher
+    try:
+        from rag.watcher import start_watcher
+        from db.store import rebuild_vault_index_from_disk, load_vault_index
+
+        load_vault_index()  # load existing index
+        rebuild_vault_index_from_disk(settings.VAULT_PATH)  # sync with disk
+        _watcher = start_watcher(settings.VAULT_PATH)
+    except Exception as exc:
+        print(f"[startup] watcher failed to start: {exc}")
+    yield
+    if _watcher is not None:
+        from rag.watcher import stop_watcher
+
+        stop_watcher(_watcher)
+        _watcher = None
+
+
+app = FastAPI(title="LocalBrain", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -43,30 +66,6 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 
 _watcher = None
-
-
-@app.on_event("startup")
-def _startup_watcher():
-    global _watcher
-    try:
-        from rag.watcher import start_watcher
-        from db.store import rebuild_vault_index_from_disk, load_vault_index
-
-        load_vault_index()  # load existing index
-        rebuild_vault_index_from_disk(settings.VAULT_PATH)  # sync with disk
-        _watcher = start_watcher(settings.VAULT_PATH)
-    except Exception as exc:
-        print(f"[startup] watcher failed to start: {exc}")
-
-
-@app.on_event("shutdown")
-def _shutdown_watcher():
-    global _watcher
-    if _watcher is not None:
-        from rag.watcher import stop_watcher
-
-        stop_watcher(_watcher)
-        _watcher = None
 
 
 # ---------------------------------------------------------------------------
@@ -158,21 +157,154 @@ def list_notes(workspace: Optional[str] = Query(None)):
 
 
 # ---------------------------------------------------------------------------
+# Notes CRUD (file-level: read/write/delete markdown files in the vault)
+# ---------------------------------------------------------------------------
+
+
+def _resolve_vault_path(rel_path: str) -> Path:
+    """Resolve a note's relative path inside the vault, refusing escapes."""
+    from config import settings
+
+    root = Path(settings.VAULT_PATH).resolve()
+    target = (root / rel_path).resolve()
+    if not target.is_relative_to(root):
+        raise HTTPException(status_code=400, detail=f"path escapes vault: {rel_path}")
+    return target
+
+
+def _note_meta_from_disk(vault_root: Path, file_path: Path) -> dict:
+    """Rebuild a note's metadata dict from its file, mirroring the index."""
+    from db.store import update_note
+    from rag.ingester.vault import parse_frontmatter
+
+    root = Path(vault_root).resolve()
+    rel = file_path.resolve().relative_to(root).as_posix()
+    raw = file_path.read_text(encoding="utf-8")
+    meta, _ = parse_frontmatter(raw)
+    stat = file_path.stat()
+    record = {
+        "workspace": str(meta.get("workspace") or "default"),
+        "title": meta.get("title") or file_path.stem,
+        "mtime": stat.st_mtime,
+        "size": stat.st_size,
+    }
+    update_note(rel, record)
+    return {"path": rel, **record}
+
+
+@app.get("/api/notes/{note_path:path}")
+def read_note(note_path: str):
+    """Read a note's markdown content and metadata from the vault."""
+    from config import settings
+
+    file_path = _resolve_vault_path(note_path)
+    if not file_path.is_file():
+        raise HTTPException(status_code=404, detail=f"note not found: {note_path}")
+
+    content = file_path.read_text(encoding="utf-8")
+    meta = _note_meta_from_disk(settings.VAULT_PATH, file_path)
+    return {**meta, "content": content}
+
+
+@app.post("/api/notes")
+def create_note(note: NoteWrite):
+    """Create a new note file in the vault (parent dirs auto-created)."""
+    import os
+
+    from config import settings
+    from rag.vectorstore import vectorstore
+
+    file_path = _resolve_vault_path(note.path)
+    if file_path.exists():
+        raise HTTPException(status_code=409, detail=f"note already exists: {note.path}")
+
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    body = note.content or f"# {file_path.stem}\n"
+    file_path.write_text(body, encoding="utf-8")
+
+    meta = _note_meta_from_disk(settings.VAULT_PATH, file_path)
+
+    # Immediately index, since the FS watcher applies only when running
+    # (and even then a 500 ms debounce would briefly hide the note).
+    try:
+        from rag.ingester.vault import ingest_file
+
+        ingest_file(str(file_path), str(settings.VAULT_PATH))
+    except Exception as exc:
+        print(f"[notes] inline ingest failed for {note.path}: {exc}")
+
+    return {**meta, "content": body}
+
+
+@app.put("/api/notes/{note_path:path}")
+def update_note(note_path: str, note: NoteWrite):
+    """Overwrite a note's content; re-indexes the vector store."""
+    from config import settings
+    from rag.ingester.vault import ingest_file
+
+    file_path = _resolve_vault_path(note_path)
+    if not file_path.is_file():
+        raise HTTPException(status_code=404, detail=f"note not found: {note_path}")
+
+    file_path.write_text(note.content, encoding="utf-8")
+    meta = _note_meta_from_disk(settings.VAULT_PATH, file_path)
+    try:
+        ingest_file(str(file_path), str(settings.VAULT_PATH))
+    except Exception as exc:
+        print(f"[notes] re-ingest failed for {note_path}: {exc}")
+
+    return {**meta, "content": note.content}
+
+
+@app.delete("/api/notes/{note_path:path}")
+def delete_note(note_path: str):
+    """Delete a note file from the vault and drop its vector chunks."""
+    from config import settings
+    from db.store import remove_note
+    from rag.vectorstore import vectorstore
+
+    file_path = _resolve_vault_path(note_path)
+    if not file_path.is_file():
+        raise HTTPException(status_code=404, detail=f"note not found: {note_path}")
+
+    try:
+        vectorstore.delete_note_chunks(note_path)
+    except Exception as exc:
+        print(f"[notes] chunk deletion failed for {note_path}: {exc}")
+
+    file_path.unlink()
+    remove_note(note_path)
+    return {"status": "deleted", "path": note_path}
+
+
+# ---------------------------------------------------------------------------
 # Querying
 # ---------------------------------------------------------------------------
+
+
+_LLM_SETUP_ERRORS = (ConnectionError, ValueError)
+
+
+def _build_agent_graph():
+    """Build the agent graph, translating LLM setup failures (Ollama down,
+    missing API key, unsupported provider) into a clear HTTP 503."""
+    from rag.graph import get_agent_graph
+
+    try:
+        return get_agent_graph()
+    except _LLM_SETUP_ERRORS as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.post("/api/query", response_model=QueryResponse)
 def query_notes(req: QueryRequest):
     """Run the full agent loop and return a structured answer."""
-    from rag.graph import get_agent_graph
-    from rag.llm_factory import get_llm
     from rag.memory import WorkspaceChatMemoryManager
 
     memory = WorkspaceChatMemoryManager(workspace=req.workspace)
     chat_history = memory.load_messages()
 
-    graph = get_agent_graph()
+    graph = _build_agent_graph()
     input_state = {
         "question": req.question,
         "workspace": req.workspace,
@@ -196,14 +328,18 @@ def query_notes(req: QueryRequest):
 
 @app.post("/api/query/stream")
 async def query_notes_stream(req: QueryRequest, request: Request):
-    """SSE streaming variant — yields JSON lines as the agent runs."""
-    from rag.graph import get_agent_graph
+    """SSE streaming variant — yields JSON lines as the agent runs.
+
+    Token-level streaming comes from the ``generate`` node, which writes
+    ``{"kind": "token"|"sources"}`` custom stream parts; they surface here via
+    ``graph.astream(stream_mode=["custom", "values"])``.
+    """
     from rag.memory import WorkspaceChatMemoryManager
 
     memory = WorkspaceChatMemoryManager(workspace=req.workspace)
     chat_history = memory.load_messages()
 
-    graph = get_agent_graph()
+    graph = _build_agent_graph()
     input_state = {
         "question": req.question,
         "workspace": req.workspace,
@@ -213,23 +349,22 @@ async def query_notes_stream(req: QueryRequest, request: Request):
 
     async def event_generator():
         full_answer = ""
-        async for event in graph.astream_events(
+        async for mode, chunk in graph.astream(
             input_state,
-            version="v2",
+            stream_mode=["custom", "values"],
             config={"configurable": {"thread_id": req.workspace}},
         ):
             if await request.is_disconnected():
                 break
-            kind = event.get("event", "")
-            if kind == "on_chat_model_stream":
-                token = event.get("data", {}).get("chunk", None)
-                if token and hasattr(token, "content"):
-                    chunk = token.content
-                    if chunk:
-                        full_answer += chunk
-                        yield f"data: {json.dumps({'type': 'token', 'data': chunk})}\n\n"
-            elif kind == "on_custom_event":
-                yield f"data: {json.dumps({'type': 'source_documents', 'data': event.get('data', {})})}\n\n"
+            if mode != "custom" or not isinstance(chunk, dict):
+                continue
+            kind = chunk.get("kind")
+            if kind == "token":
+                token = chunk.get("data", "")
+                full_answer += token
+                yield f"data: {json.dumps({'type': 'token', 'data': token})}\n\n"
+            elif kind == "sources":
+                yield f"data: {json.dumps({'type': 'source_documents', 'data': chunk.get('data', [])})}\n\n"
 
         memory.save_message("human", req.question)
         memory.save_message("ai", full_answer)
@@ -277,14 +412,15 @@ def clear_history(workspace: str = "default"):
 @app.get("/api/health")
 def health():
     """System health probe: vault path, note count, Ollama connectivity."""
-    from rag.vectorstore import vectorstore
+    from db.store import get_notes
     from rag.llm_factory import _ollama_alive
 
+    notes = get_notes()
     return {
         "status": "ok",
         "ollama_connected": _ollama_alive(settings.OLLAMA_BASE_URL),
         "vault_path": settings.VAULT_PATH,
-        "notes_indexed": vectorstore.collection.count(),
+        "notes_indexed": len(notes),
     }
 
 
@@ -297,6 +433,11 @@ if _FRONTEND_DIR.is_dir():
     app.mount("/", StaticFiles(directory=str(_FRONTEND_DIR), html=True), name="frontend")
 
 if __name__ == "__main__":
+    import os
+
     import uvicorn
 
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    # The desktop shell (Tauri) disables auto-reload so killing the sidecar
+    # process does not orphan a reloader subprocess on Windows.
+    reload = os.environ.get("LOCALBRAIN_DISABLE_RELOAD", "").lower() not in {"1", "true", "yes"}
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=reload)

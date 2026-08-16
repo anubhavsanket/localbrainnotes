@@ -41,3 +41,7 @@ def fake_embeddings(monkeypatch):
     import rag.embedder as embedder_mod
     monkeypatch.setattr(embedder_mod, "embed", _fake_embed_query)
     monkeypatch.setattr(embedder_mod, "embed_documents", _fake_embed_documents)
+    # vectorstore.py does `from rag.embedder import embed` at import time, and
+    # WorkspaceRetriever._get_relevant_documents resolves that bound name.
+    import rag.vectorstore as vs_mod
+    monkeypatch.setattr(vs_mod, "embed", _fake_embed_query)
