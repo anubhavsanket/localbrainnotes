@@ -26,9 +26,27 @@ fn project_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// Locate the venv python on Windows: `<root>/.venv/Scripts/python.exe`.
+/// Locate the venv python — cross-platform:
+///   Windows: `<root>/.venv/Scripts/python.exe`
+///   Unix:    `<root>/.venv/bin/python`
 fn python_bin() -> PathBuf {
-    project_root().join(".venv").join("Scripts").join("python.exe")
+    let base = project_root().join(".venv");
+    let bin = if cfg!(target_os = "windows") {
+        base.join("Scripts").join("python.exe")
+    } else {
+        base.join("bin").join("python")
+    };
+    if bin.exists() {
+        bin
+    } else {
+        // Fallback — try the other convention (e.g. WSL on Windows)
+        let alt = if cfg!(target_os = "windows") {
+            base.join("bin").join("python")
+        } else {
+            base.join("Scripts").join("python.exe")
+        };
+        alt
+    }
 }
 
 fn backend_main() -> PathBuf {

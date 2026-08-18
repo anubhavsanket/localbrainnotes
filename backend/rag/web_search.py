@@ -25,7 +25,7 @@ def _clean(text: str) -> str:
     return text.strip()
 
 
-def _parse_results(html: str) -> list[Document]:
+def _parse_results(html: str, max_results: int = _MAX_RESULTS) -> list[Document]:
     """Extract {href, title, snippet} triples from DuckDuckGo's result markup."""
     docs: list[Document] = []
     # Each result is a <div class="result ..."> block.
@@ -58,17 +58,15 @@ def _parse_results(html: str) -> list[Document]:
                     },
                 )
             )
-    return docs[:_MAX_RESULTS]
+    return docs[:max_results]
 
 
 def web_search(query: str, max_results: int = _MAX_RESULTS) -> list[Document]:
     """Return top web results for ``query`` as Documents.
 
     Returns ``[]`` on any network/parse error so the agent loop degrades
-    gracefully rather than raising.
-    """
-    global _MAX_RESULTS
-    _MAX_RESULTS = max_results  # keep module-level cap configurable
+    gracefully rather than raising. ``max_results`` is scoped to this call
+    (no module-level mutation — avoids races when called concurrently)."""
     params = urllib.parse.urlencode({"q": query})
     req = urllib.request.Request(
         f"{_SEARCH_ENDPOINT}?{params}",
@@ -79,7 +77,7 @@ def web_search(query: str, max_results: int = _MAX_RESULTS) -> list[Document]:
             html = resp.read().decode("utf-8", errors="replace")
     except Exception:
         return []
-    return _parse_results(html)
+    return _parse_results(html, max_results)
 
 
 def web_search_available() -> bool:

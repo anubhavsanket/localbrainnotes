@@ -6,6 +6,8 @@ tracks every file in the vault, which workspace it belongs to, its mtime
 retrieval; this handles listing and bookkeeping.
 """
 import json
+import os
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -32,13 +34,33 @@ def load_vault_index() -> dict[str, dict]:
 
 
 def save_vault_index(index: Optional[dict] = None) -> None:
-    """Persist the index to disk. Uses the module ``_index`` dict when no
-    argument is provided."""
+    """Persist the index to disk atomically.
+
+    Writes to a temporary file in the same directory, then uses
+    ``os.replace`` to swap it into place.  ``os.replace`` is atomic on both
+    POSIX and Windows, so a crash or concurrent process can never leave
+    ``vault_index.json`` truncated or half-written."""
     global _index
     if index is not None:
         _index = index
     _ensure_dir()
-    _INDEX_PATH.write_text(json.dumps(_index, indent=2, default=str), encoding="utf-8")
+    payload = json.dumps(_index, indent=2, default=str)
+    _INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(
+        dir=str(_INDEX_PATH.parent), suffix=".tmp", prefix=_INDEX_PATH.stem + "."
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(payload)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp_name, _INDEX_PATH)
+    finally:
+        if os.path.exists(tmp_name):
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
 
 
 def update_note(path: str, metadata: dict) -> None:

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LocalBrain</title>
   <style>
+    /* --- design tokens ---------------------------------------------------- */
     :root {
       --bg: #0f1117;
       --surface: #1a1d27;
@@ -15,534 +16,489 @@
       --accent-hover: #5a7aee;
       --user-bg: #1e2233;
       --ai-bg: #15182a;
+      --ok: #3ddc84;
+      --err: #ff6b6b;
       --radius: 10px;
     }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
+    html, body { height: 100%; }
     body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
+      background: var(--bg); color: var(--text);
     }
+    .app { display: flex; flex-direction: column; height: 100vh; }
 
     /* --- header ----------------------------------------------------------- */
     header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 12px 20px;
-      border-bottom: 1px solid var(--border);
-      background: var(--surface);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 20px; border-bottom: 1px solid var(--border); background: var(--surface);
     }
     header h1 { font-size: 1.1rem; font-weight: 600; letter-spacing: -0.02em; }
-    header .controls { display: flex; gap: 10px; align-items: center; }
-    header select {
-      background: var(--bg);
-      color: var(--text);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 5px 10px;
-      font-size: 0.85rem;
-      cursor: pointer;
+    .brand { display: flex; align-items: center; gap: 18px; }
+    .controls { display: flex; gap: 10px; align-items: center; }
+    .controls select {
+      background: var(--bg); color: var(--text); border: 1px solid var(--border);
+      border-radius: 6px; padding: 5px 10px; font-size: 0.85rem; cursor: pointer;
     }
-    header button {
-      background: var(--bg);
-      color: var(--muted);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 5px 12px;
-      font-size: 0.8rem;
-      cursor: pointer;
-      transition: color 0.15s;
+    .controls button {
+      background: var(--bg); color: var(--muted); border: 1px solid var(--border);
+      border-radius: 6px; padding: 5px 12px; font-size: 0.8rem; cursor: pointer; transition: color 0.15s;
     }
-    header button:hover { color: var(--text); border-color: var(--muted); }
+    .controls button:hover:not(:disabled) { color: var(--text); border-color: var(--muted); }
+    .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+    .dot.ok { background: var(--ok); }
+    .dot.err { background: var(--err); }
 
-    /* --- chat area -------------------------------------------------------- */
-    #chat {
-      flex: 1;
-      overflow-y: auto;
-      padding: 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
+    /* --- view switcher ---------------------------------------------------- */
+    .view-switch {
+      display: flex; gap: 4px; background: var(--bg); border: 1px solid var(--border);
+      border-radius: 8px; padding: 3px;
     }
+    .view-switch button {
+      background: transparent; color: var(--muted); border: none; border-radius: 5px;
+      padding: 5px 14px; font-size: 0.82rem; cursor: pointer; transition: color 0.15s, background 0.15s;
+    }
+    .view-switch button:hover { color: var(--text); }
+    .view-switch button.active { background: var(--accent); color: #fff; }
 
+    /* --- chat ------------------------------------------------------------- */
+    .chat { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
     .msg {
-      max-width: 80%;
-      padding: 12px 16px;
-      border-radius: var(--radius);
-      line-height: 1.55;
-      font-size: 0.92rem;
-      animation: fadeIn 0.15s ease;
+      max-width: 80%; padding: 12px 16px; border-radius: var(--radius);
+      line-height: 1.55; font-size: 0.92rem; animation: fadeIn 0.15s ease;
     }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+    .msg.user { align-self: flex-end; background: var(--user-bg); border: 1px solid var(--border); }
+    .msg.ai { align-self: flex-start; background: var(--ai-bg); border: 1px solid var(--border); }
+    .msg.system { align-self: center; background: transparent; color: var(--muted); font-size: 0.82rem; }
+    .msg .label { font-size: 0.72rem; color: var(--muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .plain { overflow-wrap: break-word; white-space: pre-wrap; }
 
-    .msg.user {
-      align-self: flex-end;
-      background: var(--user-bg);
-      border: 1px solid var(--border);
-    }
-    .msg.ai {
-      align-self: flex-start;
-      background: var(--ai-bg);
-      border: 1px solid var(--border);
-    }
-    .msg.system {
-      align-self: center;
-      background: transparent;
-      color: var(--muted);
-      font-size: 0.82rem;
+    /* --- sources ---------------------------------------------------------- */
+    .sources { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+    .sources summary { cursor: pointer; font-size: 0.8rem; color: var(--accent); user-select: none; }
+    .tag {
+      display: inline-block; background: var(--bg); border: 1px solid var(--border);
+      border-radius: 4px; padding: 2px 7px; font-size: 0.78rem; margin: 4px 4px 0 0; color: var(--muted);
     }
 
-    .msg .label {
-      font-size: 0.72rem;
-      color: var(--muted);
-      margin-bottom: 4px;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-    }
+    /* --- markdown --------------------------------------------------------- */
+    .md { overflow-wrap: break-word; }
+    .md > *:first-child { margin-top: 0; }
+    .md > *:last-child { margin-bottom: 0; }
+    .md p { margin: 6px 0; }
+    .md h1, .md h2, .md h3, .md h4 { margin: 10px 0 6px; line-height: 1.3; letter-spacing: -0.01em; }
+    .md h1 { font-size: 1.15rem; }
+    .md h2 { font-size: 1.05rem; }
+    .md h3 { font-size: 0.97rem; }
+    .md ul, .md ol { margin: 6px 0; padding-left: 22px; }
+    .md li { margin: 3px 0; }
+    .md code { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; font-size: 0.85em; font-family: 'JetBrains Mono', Consolas, monospace; }
+    .md pre { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; margin: 8px 0; overflow-x: auto; }
+    .md pre code { background: none; border: none; padding: 0; font-size: 0.85rem; }
+    .md blockquote { border-left: 3px solid var(--accent); padding-left: 12px; margin: 8px 0; color: var(--muted); }
+    .md a { color: var(--accent); text-decoration: none; }
+    .md a:hover { text-decoration: underline; }
+    .md table { border-collapse: collapse; margin: 8px 0; font-size: 0.85rem; max-width: 100%; }
+    .md th, .md td { border: 1px solid var(--border); padding: 5px 10px; text-align: left; }
+    .md th { background: var(--bg); font-weight: 600; }
 
-    /* --- sources panel ---------------------------------------------------- */
-    .sources {
-      margin-top: 8px;
-      padding-top: 8px;
-      border-top: 1px solid var(--border);
+    /* --- input bar -------------------------------------------------------- */
+    .input-bar {
+      padding: 12px 20px; border-top: 1px solid var(--border); background: var(--surface); display: flex; gap: 10px;
     }
-    .sources summary {
-      cursor: pointer;
-      font-size: 0.8rem;
-      color: var(--accent);
-      user-select: none;
+    .input-bar textarea {
+      flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--border);
+      border-radius: 8px; padding: 10px 14px; font-size: 0.92rem; font-family: inherit;
+      resize: none; min-height: 42px; max-height: 120px; line-height: 1.45;
     }
-    .sources .tag {
-      display: inline-block;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 2px 7px;
-      font-size: 0.78rem;
-      margin: 4px 4px 0 0;
-      color: var(--muted);
+    .input-bar textarea:focus { outline: none; border-color: var(--accent); }
+    .input-bar button {
+      background: var(--accent); color: #fff; border: none; border-radius: 8px;
+      padding: 0 20px; font-size: 0.9rem; font-weight: 500; cursor: pointer; transition: background 0.15s;
     }
+    .input-bar button:hover:not(:disabled) { background: var(--accent-hover); }
+    .input-bar button:disabled { opacity: 0.4; cursor: not-allowed; }
 
-    /* --- markdown-rendered answer body ----------------------------------- */
-    .msg .md { overflow-wrap: break-word; }
-    .msg .md > *:first-child { margin-top: 0; }
-    .msg .md > *:last-child { margin-bottom: 0; }
-    .msg .md p { margin: 6px 0; }
-    .msg .md h1, .msg .md h2, .msg .md h3, .msg .md h4 {
-      margin: 10px 0 6px;
-      line-height: 1.3;
-      letter-spacing: -0.01em;
+    /* --- notes view ------------------------------------------------------- */
+    .notes-view { flex: 1; display: flex; min-height: 0; }
+    .notes-sidebar {
+      width: 260px; flex-shrink: 0; border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; background: var(--surface);
     }
-    .msg .md h1 { font-size: 1.15rem; }
-    .msg .md h2 { font-size: 1.05rem; }
-    .msg .md h3 { font-size: 0.97rem; }
-    .msg .md ul, .msg .md ol { margin: 6px 0; padding-left: 22px; }
-    .msg .md li { margin: 3px 0; }
-    .msg .md code {
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 1px 5px;
-      font-size: 0.85em;
-      font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+    .notes-sidebar-top { display: flex; gap: 6px; padding: 10px 12px; border-bottom: 1px solid var(--border); align-items: center; }
+    .notes-search, .notes-new {
+      flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--border);
+      border-radius: 6px; padding: 6px 10px; font-size: 0.82rem; min-width: 0;
     }
-    .msg .md pre {
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 10px 12px;
-      margin: 8px 0;
-      overflow-x: auto;
+    .notes-search:focus, .notes-new:focus { outline: none; border-color: var(--accent); }
+    .notes-new { width: 90px; flex: 0 0 90px; }
+    .notes-new-btn {
+      background: var(--accent); color: #fff; border: none; border-radius: 6px;
+      width: 28px; height: 28px; font-size: 1rem; cursor: pointer; flex-shrink: 0; transition: background 0.15s;
     }
-    .msg .md pre code {
-      background: none;
-      border: none;
-      padding: 0;
-      font-size: 0.85rem;
+    .notes-new-btn:hover { background: var(--accent-hover); }
+    .notes-list { flex: 1; overflow-y: auto; padding: 8px 6px; }
+    .notes-group-title { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); padding: 10px 10px 4px; }
+    .notes-item {
+      display: block; width: 100%; background: transparent; color: var(--text); border: none;
+      border-radius: 6px; padding: 7px 10px; text-align: left; cursor: pointer; font-size: 0.85rem;
+      margin-bottom: 1px; text-overflow: ellipsis; white-space: nowrap; overflow: hidden;
     }
-    .msg .md blockquote {
-      border-left: 3px solid var(--accent);
-      padding-left: 12px;
-      margin: 8px 0;
-      color: var(--muted);
+    .notes-item:hover { background: var(--bg); }
+    .notes-item.active { background: var(--user-bg); border-left: 2px solid var(--accent); }
+    .notes-item-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .notes-empty { color: var(--muted); font-size: 0.8rem; padding: 14px 10px; }
+    .notes-editor { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    .notes-toolbar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--surface);
     }
-    .msg .md a { color: var(--accent); text-decoration: none; }
-    .msg .md a:hover { text-decoration: underline; }
-    .msg .md table {
-      border-collapse: collapse;
-      margin: 8px 0;
-      font-size: 0.85rem;
-      max-width: 100%;
-      overflow-x: auto;
+    .notes-path { font-size: 0.8rem; color: var(--muted); max-width: 60%; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
+    .notes-actions { display: flex; gap: 8px; }
+    .notes-actions button {
+      background: var(--bg); color: var(--muted); border: 1px solid var(--border);
+      border-radius: 6px; padding: 5px 12px; font-size: 0.8rem; cursor: pointer; transition: color 0.15s, border-color 0.15s;
     }
-    .msg .md th, .msg .md td {
-      border: 1px solid var(--border);
-      padding: 5px 10px;
-      text-align: left;
+    .notes-actions button:hover:not(:disabled) { color: var(--text); border-color: var(--muted); }
+    .notes-actions button.save { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .notes-actions button.save:hover:not(:disabled) { background: var(--accent-hover); }
+    .notes-actions button.save:disabled { opacity: 0.4; cursor: default; }
+    .notes-actions button.delete:hover { color: var(--err); border-color: var(--err); }
+    .notes-textarea {
+      flex: 1; background: var(--bg); color: var(--text); border: none; outline: none; resize: none;
+      padding: 20px 24px; font-family: 'JetBrains Mono', Consolas, monospace; font-size: 0.88rem; line-height: 1.6;
     }
-    .msg .md th { background: var(--bg); font-weight: 600; }
-    .msg .md strong { font-weight: 600; }
-    .msg .md em { font-style: italic; }
-
-    /* --- input ------------------------------------------------------------ */
-    #input-bar {
-      padding: 12px 20px;
-      border-top: 1px solid var(--border);
-      background: var(--surface);
-      display: flex;
-      gap: 10px;
-    }
-    #input-bar textarea {
-      flex: 1;
-      background: var(--bg);
-      color: var(--text);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 10px 14px;
-      font-size: 0.92rem;
-      font-family: inherit;
-      resize: none;
-      min-height: 42px;
-      max-height: 120px;
-      line-height: 1.45;
-    }
-    #input-bar textarea:focus { outline: none; border-color: var(--accent); }
-    #input-bar button {
-      background: var(--accent);
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      padding: 0 20px;
-      font-size: 0.9rem;
-      font-weight: 500;
-      cursor: pointer;
-      transition: background 0.15s;
-    }
-    #input-bar button:hover { background: var(--accent-hover); }
-    #input-bar button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .notes-preview { flex: 1; overflow-y: auto; padding: 20px 24px; }
+    .notes-placeholder { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 0.9rem; }
+    .notes-error { padding: 8px 16px; color: var(--err); background: rgba(255,107,107,0.08); border-top: 1px solid var(--err); font-size: 0.82rem; }
+    .hidden { display: none !important; }
   </style>
 </head>
 <body>
+<div class="app">
+  <!-- header -->
   <header>
-    <h1>🧠 LocalBrain</h1>
+    <div class="brand">
+      <h1>LocalBrain</h1>
+      <nav class="view-switch">
+        <button id="v-chat" class="active" onclick="switchView('chat')">Chat</button>
+        <button id="v-notes" onclick="switchView('notes')">Notes</button>
+      </nav>
+    </div>
     <div class="controls">
-      <select id="workspace-select">
-        <option value="default">Default</option>
-      </select>
-      <button id="btn-clear" title="Clear history">Clear</button>
-      <button id="btn-reindex" title="Re-index vault">Re-index</button>
+      <span id="health-dot" class="dot err" title="checking backend…"></span>
+      <select id="workspace-select"></select>
+      <button id="btn-clear" class="hidden">Clear</button>
+      <button id="btn-reindex" class="hidden">Re-index</button>
     </div>
   </header>
 
-  <div id="chat"></div>
-
-  <div id="input-bar">
+  <!-- chat view -->
+  <main id="chat-view" class="chat"></main>
+  <footer id="input-bar" class="input-bar hidden">
     <textarea id="input" placeholder="Ask a question…" rows="1"></textarea>
     <button id="btn-send">Send</button>
+  </footer>
+
+  <!-- notes view -->
+  <div id="notes-view" class="notes-view hidden">
+    <aside class="notes-sidebar">
+      <div class="notes-sidebar-top">
+        <input class="notes-search" id="notes-search" placeholder="Search notes…" />
+        <input class="notes-new" id="notes-new-title" placeholder="New note…" />
+        <button class="notes-new-btn" id="btn-new-note" title="Create note">+</button>
+      </div>
+      <div class="notes-list" id="notes-list"></div>
+    </aside>
+    <section class="notes-editor" id="notes-editor">
+      <div class="notes-placeholder">Select a note to start editing.</div>
+    </section>
   </div>
+</div>
 
-  <script>
-    const chat    = document.getElementById('chat');
-    const input   = document.getElementById('input');
-    const btnSend = document.getElementById('btn-send');
-    const btnClear= document.getElementById('btn-clear');
-    const btnIdx  = document.getElementById('btn-reindex');
-    const wsSel   = document.getElementById('workspace-select');
+<script>
+// ===== API helpers ==========================================================
+const API = '';
+async function api(path, init) {
+  const res = await fetch(API + path, { headers: { 'Content-Type': 'application/json' }, ...init });
+  if (!res.ok) {
+    let d = 'HTTP ' + res.status;
+    try { const b = await res.json(); if (b.detail) d = typeof b.detail === 'string' ? b.detail : JSON.stringify(b.detail); } catch {}
+    throw new Error(d);
+  }
+  return res.json();
+}
+function encodeURI(path) { return path.split('/').map(encodeURIComponent).join('/'); }
 
-    /* ---- helpers --------------------------------------------------------- */
-    function renderSources(div, sources) {
-      if (!sources || !sources.length) return;
-      let srcWrap = div.querySelector('.sources');
-      if (!srcWrap) {
-        srcWrap = document.createElement('div');
-        srcWrap.className = 'sources';
-        div.appendChild(srcWrap);
-      }
-      srcWrap.innerHTML = '';
-      const details = document.createElement('details');
-      const summary = document.createElement('summary');
-      summary.textContent = `Sources (${sources.length})`;
-      details.appendChild(summary);
-      sources.forEach(s => {
-        const tag = document.createElement('span');
-        tag.className = 'tag';
-        tag.textContent = s;
-        details.appendChild(tag);
-      });
-      srcWrap.appendChild(details);
-    }
+// ===== Markdown renderer (XSS-safe, dependency-free) ========================
+function escapeHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function inlineMd(s) {
+  return escapeHtml(s).replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
+    .replace(/\*([^*]+)\*/g,'<em>$1</em>').replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a href="$2" rel="noopener">$1</a>');
+}
+function renderMarkdown(md) {
+  if (!md) return '';
+  const lines = md.split('\n'), out = [];
+  let listType = null, inCode = false, codeBuf = [], table = [];
+  function closeList() { if (listType) { out.push('</'+listType+'>'); listType = null; } }
+  function flushTable() {
+    if (!table.length) return;
+    let h = '<table>';
+    table.forEach((row, r) => { h += '<tr>'; row.forEach(c => { h += (r===0?'<th>':'<td>') + inlineMd(c.trim()) + (r===0?'</th>':'</td>'); }); h += '</tr>'; });
+    out.push(h+'</table>'); table = [];
+  }
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trimEnd();
+    if (line.trim().startsWith('```')) { closeList(); flushTable(); if (inCode) { out.push('<pre><code>'+escapeHtml(codeBuf.join('\n'))+'</code></pre>'); codeBuf=[]; inCode=false; } else { inCode=true; } continue; }
+    if (inCode) { codeBuf.push(line); continue; }
+    const h = /^(#{1,4})\s+(.*)$/.exec(line);
+    if (h) { closeList(); flushTable(); const l=h[1].length; out.push('<h'+l+'>'+inlineMd(h[2])+'</h'+l+'>'); continue; }
+    if (line.startsWith('|') && line.endsWith('|')) { closeList(); const cells=line.slice(1,-1).split('|'); if (cells.every(c => /^:?-{3,}:?$/.test(c.trim()))) continue; table.push(cells); continue; }
+    flushTable();
+    if (line.startsWith('> ')) { closeList(); out.push('<blockquote>'+inlineMd(line.slice(2))+'</blockquote>'); continue; }
+    let m = /^[-*]\s+(.*)$/.exec(line.trim());
+    if (m) { if (listType!=='ul') { closeList(); out.push('<ul>'); listType='ul'; } out.push('<li>'+inlineMd(m[1])+'</li>'); continue; }
+    m = /^\d+\.\s+(.*)$/.exec(line.trim());
+    if (m) { if (listType!=='ol') { closeList(); out.push('<ol>'); listType='ol'; } out.push('<li>'+inlineMd(m[1])+'</li>'); continue; }
+    closeList();
+    if (!line.trim()) continue;
+    out.push('<p>'+inlineMd(line)+'</p>');
+  }
+  closeList(); flushTable();
+  if (inCode) out.push('<pre><code>'+escapeHtml(codeBuf.join('\n'))+'</code></pre>');
+  return out.join('\n');
+}
 
-    function addMsg(role, content, sources) {
-      const div = document.createElement('div');
-      div.className = `msg ${role}`;
+// ===== App state ============================================================
+let currentView = 'chat', workspace = 'default', workspaces = ['default'];
+let messages = [], sending = false, backendOk = false;
+let notesGroups = [], selectedNote = null, noteContent = '', noteDirty = false, notePreview = false;
 
-      const label = document.createElement('div');
-      label.className = 'label';
-      label.textContent = role === 'user' ? 'You' : 'LocalBrain';
-      div.appendChild(label);
+// ===== DOM refs =============================================================
+const chatEl = document.getElementById('chat-view');
+const inputBar = document.getElementById('input-bar');
+const notesView = document.getElementById('notes-view');
+const notesList = document.getElementById('notes-list');
+const notesEditor = document.getElementById('notes-editor');
+const wsSel = document.getElementById('workspace-select');
+const healthDot = document.getElementById('health-dot');
+const btnClear = document.getElementById('btn-clear');
+const btnReindex = document.getElementById('btn-reindex');
 
-      const body = document.createElement('div');
-      body.className = 'md';
-      div.appendChild(body);
+// ===== View switching =======================================================
+function switchView(view) {
+  currentView = view;
+  document.getElementById('v-chat').classList.toggle('active', view==='chat');
+  document.getElementById('v-notes').classList.toggle('active', view==='notes');
+  chatEl.classList.toggle('hidden', view!=='chat');
+  inputBar.classList.toggle('hidden', view!=='chat');
+  notesView.classList.toggle('hidden', view!=='notes');
+  btnClear.classList.toggle('hidden', view!=='chat');
+  btnReindex.classList.toggle('hidden', view!=='chat');
+  if (view==='notes') refreshNotes();
+}
 
-      if (sources && sources.length) {
-        renderSources(div, sources);
-      }
+// ===== Health check =========================================================
+async function checkHealth() {
+  try { const h = await api('/api/health'); backendOk = h.status === 'ok'; }
+  catch { backendOk = false; }
+  healthDot.className = 'dot ' + (backendOk ? 'ok' : 'err');
+  healthDot.title = backendOk ? 'backend up' : 'backend down';
+}
 
-      chat.appendChild(div);
-      chat.scrollTop = chat.scrollHeight;
-      return div;
-    }
+// ===== Workspaces ===========================================================
+async function loadWorkspaces() {
+  try {
+    const data = await api('/api/workspaces');
+    workspaces = data.workspaces.includes('default') ? data.workspaces : [...data.workspaces, 'default'];
+  } catch {}
+  wsSel.innerHTML = '';
+  workspaces.forEach(w => { const o = document.createElement('option'); o.value = w; o.textContent = w; wsSel.appendChild(o); });
+  workspace = workspaces[0] || 'default';
+  wsSel.value = workspace;
+}
 
-    /* ---- minimal, dependency-free Markdown renderer --------------------- */
-    // Renders the (already safe) markdown the LLM produces: headings, lists,
-    // bold/italic, inline code, fenced code blocks, tables, links, quotes.
-    // HTML in the response is escaped first, so this is XSS-safe.
+// ===== Chat =================================================================
+function addMsg(role, content, sources) {
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  const label = document.createElement('div');
+  label.className = 'label';
+  label.textContent = role === 'user' ? 'You' : role === 'ai' ? 'LocalBrain' : '';
+  div.appendChild(label);
+  if (role === 'ai' && content) { const md = document.createElement('div'); md.className = 'md'; md.innerHTML = renderMarkdown(content); div.appendChild(md); }
+  else { const p = document.createElement('div'); p.className = 'plain'; p.textContent = content; div.appendChild(p); }
+  if (sources && sources.length) {
+    const wrap = document.createElement('div'); wrap.className = 'sources';
+    const det = document.createElement('details'); const sum = document.createElement('summary');
+    sum.textContent = 'Sources (' + sources.length + ')'; det.appendChild(sum);
+    sources.forEach(s => { const t = document.createElement('span'); t.className = 'tag'; t.textContent = s; det.appendChild(t); });
+    wrap.appendChild(det); div.appendChild(wrap);
+  }
+  chatEl.appendChild(div);
+  chatEl.scrollTop = chatEl.scrollHeight;
+  return div;
+}
 
-    function escapeHtml(s) {
-      return s
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
-    }
-
-    function inlineMd(s) {
-      // escape first, then apply inline formatting
-      return escapeHtml(s)
-        .replace(/`([^`]+)`/g, '<code>$1</code>')
-        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-        .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" rel="noopener">$1</a>');
-    }
-
-    function renderMarkdown(md) {
-      if (!md) return '';
-      const lines = md.split('\n');
-      const out = [];
-      let i = 0;
-      let listType = null;   // 'ul' | 'ol' | null
-      let inCode = false;
-      let codeBuf = [];
-      let table = [];        // accumulating table rows
-
-      function closeList() {
-        if (listType) { out.push(`</${listType}>`); listType = null; }
-      }
-      function flushTable() {
-        if (!table.length) return;
-        let h = '<table>';
-        table.forEach((row, r) => {
-          h += '<tr>';
-          row.forEach(cell => {
-            const tag = r === 0 ? 'th' : 'td';
-            h += `<${tag}>${inlineMd(cell.trim())}</${tag}>`;
-          });
-          h += '</tr>';
-        });
-        out.push(h + '</table>');
-        table = [];
-      }
-
-      for (; i < lines.length; i++) {
-        const raw = lines[i];
-        const line = raw.trimEnd();
-
-        // fenced code blocks
-        if (line.trim().startsWith('```')) {
-          closeList(); flushTable();
-          if (inCode) {
-            out.push('<pre><code>' + escapeHtml(codeBuf.join('\n')) + '</code></pre>');
-            codeBuf = []; inCode = false;
-          } else { inCode = true; }
-          continue;
-        }
-        if (inCode) { codeBuf.push(line); continue; }
-
-        // headers
-        const h = /^(#{1,4})\s+(.*)$/.exec(line);
-        if (h) {
-          closeList(); flushTable();
-          const level = h[1].length;
-          out.push(`<h${level}>${inlineMd(h[2])}</h${level}>`);
-          continue;
-        }
-
-        // tables (adjacent pipe lines, with a separator row)
-        if (line.startsWith('|') && line.endsWith('|')) {
-          closeList();
-          const cells = line.slice(1, -1).split('|');
-          const isSep = cells.every(c => /^:?-{3,}:?$/.test(c.trim()));
-          if (isSep) continue;  // skip the |---| separator, keep header row
-          table.push(cells);
-          continue;
-        }
-        flushTable();
-
-        // blockquote
-        if (line.startsWith('> ')) {
-          closeList();
-          out.push(`<blockquote>${inlineMd(line.slice(2))}</blockquote>`);
-          continue;
-        }
-
-        // unordered / ordered lists (grouped)
-        let m = /^[-*]\s+(.*)$/.exec(line.trim());
-        if (m) {
-          if (listType !== 'ul') { closeList(); out.push('<ul>'); listType = 'ul'; }
-          out.push(`<li>${inlineMd(m[1])}</li>`);
-          continue;
-        }
-        m = /^\d+\.\s+(.*)$/.exec(line.trim());
-        if (m) {
-          if (listType !== 'ol') { closeList(); out.push('<ol>'); listType = 'ol'; }
-          out.push(`<li>${inlineMd(m[1])}</li>`);
-          continue;
-        }
-        closeList();
-
-        // blank line: paragraph break
-        if (!line.trim()) continue;
-        out.push(`<p>${inlineMd(line)}</p>`);
-      }
-      closeList(); flushTable();
-      if (inCode) { out.push('<pre><code>' + escapeHtml(codeBuf.join('\n')) + '</code></pre>'); }
-      return out.join('\n');
-    }
-
-    /* ---- auto-resize textarea -------------------------------------------- */
-    input.addEventListener('input', () => {
-      input.style.height = 'auto';
-      input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+async function loadHistory() {
+  try {
+    const data = await api('/api/history?workspace=' + encodeURIComponent(workspace));
+    messages = [];
+    data.messages.filter(m => m.role==='human'||m.role==='ai').forEach(m => {
+      messages.push({ role: m.role==='human'?'user':'ai', content: m.content });
     });
-    input.addEventListener('keydown', e => {
-      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
-    });
-
-    /* ---- send ------------------------------------------------------------ */
-    let sending = false;
-    async function send() {
-      const text = input.value.trim();
-      if (!text || sending) return;
-      sending = true;
-      btnSend.disabled = true;
-      input.value = '';
-      input.style.height = 'auto';
-      addMsg('user', text);
-
-      const ws = wsSel.value;
-      const aiDiv = addMsg('ai', '');
-      const body = aiDiv.querySelector('div.md');
-      let full = '';
-
-      try {
-        const res = await fetch('/api/query/stream', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ question: text, workspace: ws }),
-        });
-
-        if (!res.ok) {
-          let errText = `HTTP ${res.status}`;
-          try {
-            const errJson = await res.json();
-            if (errJson.detail) errText = typeof errJson.detail === 'string' ? errJson.detail : JSON.stringify(errJson.detail);
-          } catch {}
-          body.textContent = `Error: ${errText}`;
-          sending = false;
-          btnSend.disabled = false;
-          input.focus();
-          return;
-        }
-
-        const reader = res.body.getReader();
-        const dec = new TextDecoder();
-        let buffer = '';
-
-        function processLines(lines) {
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed.startsWith('data: ')) continue;
-            try {
-              const msg = JSON.parse(trimmed.slice(6));
-              if (msg.type === 'token') {
-                full += msg.data;
-                body.innerHTML = renderMarkdown(full);
-              } else if (msg.type === 'source_documents') {
-                renderSources(aiDiv, msg.data);
-              }
-            } catch {}
-          }
-        }
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) {
-            if (buffer.trim()) {
-              processLines(buffer.split('\n'));
-            }
-            break;
-          }
-          buffer += dec.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop(); // carry incomplete line over to next chunk
-          processLines(lines);
-        }
-      } catch (err) {
-        full = `Error: ${err.message}`;
-        body.textContent = full;
-      }
-
-      sending = false;
-      btnSend.disabled = false;
-      input.focus();
-    }
-
-    btnSend.addEventListener('click', send);
-
-    /* ---- clear history --------------------------------------------------- */
-    btnClear.addEventListener('click', async () => {
-      await fetch(`/api/history?workspace=${wsSel.value}`, { method: 'DELETE' });
-      chat.innerHTML = '';
-      addMsg('system', 'History cleared.');
-    });
-
-    /* ---- re-index vault -------------------------------------------------- */
-    btnIdx.addEventListener('click', async () => {
-      btnIdx.textContent = 'Indexing…';
-      const res = await fetch('/api/vault/ingest', { method: 'POST' });
-      const data = await res.json();
-      addMsg('system', `Indexed ${data.chunks} chunks from the vault.`);
-      btnIdx.textContent = 'Re-index';
-    });
-
-    /* ---- workspace selector ---------------------------------------------- */
-    async function loadWorkspaces() {
-      try {
-        const res = await fetch('/api/workspaces');
-        const data = await res.json();
-        wsSel.innerHTML = '';
-        data.workspaces.forEach(ws => {
-          const opt = document.createElement('option');
-          opt.value = ws; opt.textContent = ws;
-          wsSel.appendChild(opt);
-        });
-        if (!data.workspaces.includes('default')) {
-          const opt = document.createElement('option');
-          opt.value = 'default'; opt.textContent = 'default';
-          wsSel.appendChild(opt);
-        }
-      } catch {}
-    }
-    loadWorkspaces();
-
-    /* ---- boot message ---------------------------------------------------- */
+    chatEl.innerHTML = '';
+    if (!messages.length) addMsg('system', 'Ask a question about your vault, or type anything.');
+    else messages.forEach(m => addMsg(m.role, m.content, m.sources));
+  } catch {
+    chatEl.innerHTML = '';
     addMsg('system', 'Ask a question about your vault, or type anything.');
-  </script>
+  }
+}
+
+async function sendChat() {
+  const text = document.getElementById('input').value.trim();
+  if (!text || sending || !backendOk) return;
+  sending = true;
+  document.getElementById('btn-send').disabled = true;
+  document.getElementById('input').value = '';
+  document.getElementById('input').style.height = 'auto';
+  messages.push({ role: 'user', content: text });
+  addMsg('user', text);
+  const aiDiv = addMsg('ai', '');
+  const body = aiDiv.querySelector('.md');
+  let full = '';
+  try {
+    const res = await fetch(API + '/api/query/stream', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: text, workspace }),
+    });
+    if (!res.ok) { let e = 'HTTP ' + res.status; try { const b = await res.json(); if (b.detail) e = b.detail; } catch {} body.textContent = 'Error: ' + e; }
+    else {
+      const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = '';
+      function processLines(lines) { for (const line of lines) { const t = line.trim(); if (!t.startsWith('data: ')) continue; try { const msg = JSON.parse(t.slice(6)); if (msg.type==='token') { full += msg.data; body.innerHTML = renderMarkdown(full); } else if (msg.type==='source_documents') { /* sources handled on done */ } } catch {} } }
+      while (true) { const { done, value } = await reader.read(); if (done) { if (buf.trim()) processLines(buf.split('\n')); break; } buf += dec.decode(value, { stream: true }); const lines = buf.split('\n'); buf = lines.pop(); processLines(lines); }
+    }
+  } catch (err) { body.textContent = 'Error: ' + err.message; }
+  messages.push({ role: 'ai', content: full });
+  sending = false;
+  document.getElementById('btn-send').disabled = false;
+  document.getElementById('input').focus();
+}
+
+// ===== Notes ================================================================
+async function refreshNotes() {
+  try {
+    const data = await api('/api/notes' + (workspace ? '?workspace=' + encodeURIComponent(workspace) : ''));
+    const byWs = new Map();
+    for (const n of data.notes) { const list = byWs.get(n.workspace) || []; list.push(n); byWs.set(n.workspace, list); }
+    notesGroups = [...byWs.entries()].map(([name, notes]) => ({ workspace: name, notes: notes.sort((a,b) => a.title.localeCompare(b.title)) })).sort((a,b) => a.workspace.localeCompare(b.workspace));
+  } catch { notesGroups = []; }
+  renderNotesList();
+}
+
+function renderNotesList(filter) {
+  const q = (filter || document.getElementById('notes-search').value || '').trim().toLowerCase();
+  const visible = q ? notesGroups.map(g => ({ ...g, notes: g.notes.filter(n => (n.title+' '+n.path).toLowerCase().includes(q)) })).filter(g => g.notes.length) : notesGroups;
+  notesList.innerHTML = '';
+  if (!visible.length) { notesList.innerHTML = '<div class="notes-empty">No notes yet.</div>'; return; }
+  visible.forEach(g => {
+    const title = document.createElement('div'); title.className = 'notes-group-title'; title.textContent = g.workspace; notesList.appendChild(title);
+    g.notes.forEach(n => {
+      const btn = document.createElement('button'); btn.className = 'notes-item' + (selectedNote===n.path ? ' active' : '');
+      btn.title = n.path; btn.innerHTML = '<span class="notes-item-title">' + escapeHtml(n.title) + '</span>';
+      btn.onclick = () => openNote(n.path); notesList.appendChild(btn);
+    });
+  });
+}
+
+async function openNote(path) {
+  try {
+    const note = await api('/api/notes/' + encodeURI(path));
+    selectedNote = path; noteContent = note.content; noteDirty = false; notePreview = false;
+    renderNotesEditor();
+  } catch (e) { alert(e.message); }
+}
+
+function renderNotesEditor() {
+  if (!selectedNote) { notesEditor.innerHTML = '<div class="notes-placeholder">Select a note to start editing.</div>'; return; }
+  notesEditor.innerHTML = '';
+  // toolbar
+  const toolbar = document.createElement('div'); toolbar.className = 'notes-toolbar';
+  const pathSpan = document.createElement('span'); pathSpan.className = 'notes-path'; pathSpan.textContent = selectedNote; pathSpan.title = selectedNote; toolbar.appendChild(pathSpan);
+  const actions = document.createElement('div'); actions.className = 'notes-actions';
+  const btnPreview = document.createElement('button'); btnPreview.textContent = notePreview ? 'Edit' : 'Preview';
+  btnPreview.onclick = () => { notePreview = !notePreview; renderNotesEditor(); }; actions.appendChild(btnPreview);
+  const btnDel = document.createElement('button'); btnDel.className = 'delete'; btnDel.textContent = 'Delete'; btnDel.title = 'Delete note';
+  btnDel.onclick = deleteNote; actions.appendChild(btnDel);
+  const btnSave = document.createElement('button'); btnSave.className = 'save'; btnSave.textContent = 'Save'; btnSave.disabled = !noteDirty;
+  btnSave.onclick = saveNote; actions.appendChild(btnSave);
+  toolbar.appendChild(actions); notesEditor.appendChild(toolbar);
+  // editor or preview
+  if (notePreview) { const prev = document.createElement('div'); prev.className = 'notes-preview md'; prev.innerHTML = renderMarkdown(noteContent); notesEditor.appendChild(prev); }
+  else { const ta = document.createElement('textarea'); ta.className = 'notes-textarea'; ta.value = noteContent; ta.spellcheck = false;
+    ta.oninput = () => { noteContent = ta.value; noteDirty = true; renderNotesEditor(); }; notesEditor.appendChild(ta); }
+}
+
+async function saveNote() {
+  if (!selectedNote || !noteDirty) return;
+  try {
+    const res = await api('/api/notes/' + encodeURI(selectedNote), { method: 'PUT', body: JSON.stringify({ path: selectedNote, content: noteContent, workspace }) });
+    noteContent = res.content; noteDirty = false;
+    renderNotesEditor(); refreshNotes();
+    // flash "Saved" briefly
+    const btn = notesEditor.querySelector('.save');
+    if (btn) { btn.textContent = 'Saved'; setTimeout(() => { if (btn.textContent === 'Saved') btn.textContent = 'Save'; }, 1500); }
+  } catch (e) { alert(e.message); }
+}
+
+async function deleteNote() {
+  if (!selectedNote) return;
+  if (!confirm('Delete "' + selectedNote + '"? This removes the file and its index.')) return;
+  try {
+    await api('/api/notes/' + encodeURI(selectedNote), { method: 'DELETE' });
+    selectedNote = null; noteContent = ''; noteDirty = false; renderNotesEditor(); refreshNotes();
+  } catch (e) { alert(e.message); }
+}
+
+async function createNote() {
+  const titleInput = document.getElementById('notes-new-title');
+  const title = (titleInput.value.trim() || 'untitled-' + Date.now()).replace(/[\\/:*?"<>|]/g, '-');
+  const path = (workspace === 'default' ? '' : workspace + '/') + title + '.md';
+  try {
+    const res = await api('/api/notes', { method: 'POST', body: JSON.stringify({ path, content: '# ' + title + '\n\n', workspace }) });
+    titleInput.value = '';
+    await refreshNotes();
+    openNote(res.path);
+  } catch (e) { alert(e.message); }
+}
+
+// ===== Boot =================================================================
+(async function boot() {
+  await checkHealth();
+  await loadWorkspaces();
+  await loadHistory();
+
+  // event listeners
+  document.getElementById('btn-send').onclick = sendChat;
+  document.getElementById('input').onkeydown = e => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); } };
+  document.getElementById('input').oninput = function() { this.style.height = 'auto'; this.style.height = Math.min(this.scrollHeight, 120) + 'px'; };
+  document.getElementById('btn-clear').onclick = async () => {
+    await api('/api/history?workspace=' + encodeURIComponent(workspace), { method: 'DELETE' });
+    messages = []; chatEl.innerHTML = ''; addMsg('system', 'History cleared.');
+  };
+  document.getElementById('btn-reindex').onclick = async () => {
+    btnReindex.textContent = 'Indexing…';
+    try { const res = await api('/api/vault/ingest', { method: 'POST' }); addMsg('system', 'Indexed ' + res.chunks + ' chunks from the vault.'); }
+    catch (e) { addMsg('system', 'Index failed: ' + e.message); }
+    btnReindex.textContent = 'Re-index';
+  };
+  wsSel.onchange = () => { workspace = wsSel.value; loadHistory(); };
+  document.getElementById('notes-search').oninput = function() { renderNotesList(this.value); };
+  document.getElementById('notes-new-title').onkeydown = e => { if (e.key==='Enter') createNote(); };
+  document.getElementById('btn-new-note').onclick = createNote;
+})();
+</script>
 </body>
 </html>

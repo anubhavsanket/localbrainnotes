@@ -49,3 +49,4 @@ desktop/src-tauri/gen/
 # --- Local-only working docs / config --------------------------------------
 localbrainnotesprd.md
 opencode.jsonc
+.zcode/

@@ -3,7 +3,6 @@ fastapi>=0.110.0
 uvicorn[standard]>=0.29.0
 pydantic>=2.6.0
 pydantic-settings>=2.2.0
-python-dotenv>=1.0.0
 pyyaml>=6.0
 
 # LLM + RAG
@@ -20,14 +19,13 @@ langgraph>=0.2.0
 
 # Vector DB
 chromadb>=0.5.0
-langchain-chroma>=0.2.0
+
+# Numerics (used directly in vectorstore MMR)
+numpy>=1.24.0
 
 # Embeddings (optional providers)
 langchain-huggingface>=0.1.0
 sentence-transformers>=3.0.0
-
-# Local LLM
-ollama>=0.4.0
 
 # Document ingestion
 pymupdf>=1.24.0
@@ -44,8 +42,6 @@ Pillow>=10.0.0
 watchdog>=4.0.0
 
 # Evaluation
-# ragas >=0.4 is required for langchain 1.x compatibility; it also needs the
-# vertexai shim injected by evals/run_eval.py (see _install_vertexai_shim).
 ragas>=0.4.0,<0.5.0
 datasets>=2.0.0
 

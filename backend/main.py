@@ -4,7 +4,6 @@ Routes cover vault ingestion, querying (sync + SSE streaming), workspace
 management, conversation history, and a health probe.  A file-system watcher
 is launched on startup to keep the vector index in sync with the vault on disk.
 """
-import asyncio
 import json
 import time
 from contextlib import asynccontextmanager
@@ -97,14 +96,8 @@ def ingest_single_file(path: str):
     from db.store import update_note
 
     # `path` is a filesystem path (repo-relative or absolute), not a
-    # vault-relative note id. Resolve it, then require it to live inside the
-    # vault so non-vault files can't be indexed accidentally.
-    root = Path(settings.VAULT_PATH).resolve()
-    file_path = Path(path).resolve()
-    if not file_path.is_relative_to(root):
-        raise HTTPException(status_code=400, detail=f"path escapes vault: {path}")
-    if not file_path.is_file():
-        raise HTTPException(status_code=404, detail=f"File not found: {path}")
+    # vault-relative note id. Validate it resides in the vault.
+    file_path = _validate_path_within_vault(path)
 
     count = ingest_file(str(file_path), settings.VAULT_PATH)
 
@@ -121,13 +114,14 @@ def ingest_single_file(path: str):
 
 @app.post("/api/vault/ingest/pdf")
 def ingest_pdf(file_path: str, workspace: str = "default"):
-    """Index a PDF file into the vector store (any local path is allowed;
-    only existence + readability are enforced)."""
+    """Index a PDF file into the vector store.
+
+    The file must live inside the vault; arbitrary filesystem paths are rejected
+    to prevent accidental or malicious ingestion of non-vault files.
+    """
     from rag.ingester.pdf import ingest_pdf as _ingest_pdf
 
-    candidate = Path(file_path).resolve()
-    if not candidate.is_file():
-        raise HTTPException(status_code=404, detail=f"PDF not found: {file_path}")
+    candidate = _validate_path_within_vault(file_path)
 
     count = _ingest_pdf(str(candidate), workspace)
     return {"status": "indexed", "chunks": count, "file": file_path}
@@ -168,7 +162,12 @@ def list_notes(workspace: Optional[str] = Query(None)):
 
 
 def _resolve_vault_path(rel_path: str) -> Path:
-    """Resolve a note's relative path inside the vault, refusing escapes."""
+    """Resolve a note's relative path inside the vault, refusing escapes.
+
+    Unlike ``_validate_path_within_vault`` this accepts paths that do not yet
+    exist on disk (needed for note creation) and treats ``rel_path`` as a
+    vault-relative id rather than an absolute/fs path.
+    """
     from config import settings
 
     root = Path(settings.VAULT_PATH).resolve()
@@ -219,6 +218,23 @@ def _validate_youtube_url(url: str) -> str:
     if not any(host == d or host.endswith(f".{d}") for d in ("youtube.com", "youtu.be")):
         raise HTTPException(status_code=400, detail=f"not a YouTube URL: {url}")
     return url
+
+
+def _validate_path_within_vault(file_path: str) -> Path:
+    """Validate that a filesystem path lives inside the configured vault.
+
+    Returns the resolved Path object if valid; raises HTTPException(400) if the
+    path attempts to escape the vault or does not point to an existing file.
+    """
+    from config import settings
+
+    root = Path(settings.VAULT_PATH).resolve()
+    candidate = Path(file_path).resolve()
+    if not candidate.is_relative_to(root):
+        raise HTTPException(status_code=400, detail=f"path escapes vault: {file_path}")
+    if not candidate.is_file():
+        raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
+    return candidate
 
 
 @app.get("/api/notes/{note_path:path}")

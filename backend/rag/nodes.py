@@ -455,17 +455,17 @@ def create_nodes(llm: BaseChatModel) -> dict[str, Callable[[AgentState], dict[st
     # ---- node: guard_answer -----------------------------------------------
     def guard_answer(state: AgentState) -> dict:
         """Grounding guard — rewrite the answer to drop claims not supported
-        by the retrieved context (run only when reflection flagged the draft)."""
+        by the retrieved context (run only when reflection flagged the draft).
+
+        The graph wires ``guard_answer → END`` so the agent terminates after
+        this repair; no cycle guard is needed (or possible) here."""
         context = _format_docs(_relevant_docs(state))
         answer = _strip_agent_chatter(guard_chain.invoke({
             "question": state.get("question", ""),
             "context": context,
             "answer": state.get("answer", ""),
         }))
-        return {
-            "answer": answer,
-            "repair_count": state.get("repair_count", 0) + 1,
-        }
+        return {"answer": answer}
 
     # ---- node: tool_search ------------------------------------------------
     def tool_search(state: AgentState) -> dict:

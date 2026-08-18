@@ -121,7 +121,7 @@ def _after_grade(state: AgentState) -> str:
     relevant = any(g.get("relevant") for g in state.get("retrieval_grades", []))
     if relevant:
         return "generate"
-    if state.get("rewrite_count", 0) >= _REWRITE_MAX:
+    if state.get("rewrite_count", 0) >= REWRITE_MAX:
         return "generate"  # give up rewriting, generate with whatever we have
     return "rewrite"
 

@@ -26,7 +26,6 @@ class AgentState(TypedDict, total=False):
     documents: list[Document]  # retrieved docs (vault or web)
     retrieval_grades: list[dict]  # [{"doc": Document, "relevant": bool}, ...]
     rewrite_count: int  # cycle guard (max 3)
-    repair_count: int  # groundedness-guard cycle guard (max 1)
 
     # --- outbound (to caller) ----------------------------------------------
     answer: str  # final or draft

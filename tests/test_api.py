@@ -112,6 +112,143 @@ class TestVaultIngest:
         assert res.status_code == 404
 
 
+class TestVaultIngestPDF:
+    """Security tests for PDF ingestion path validation."""
+
+    def test_ingest_pdf_rejects_path_escape(self, client, fake_embeddings):
+        """Regression: the vault/ingest/pdf route must refuse files outside
+        the vault root (was: arbitrary filesystem paths accepted)."""
+        res = client.post(
+            "/api/vault/ingest/pdf",
+            params={"file_path": "../backend/main.py", "workspace": "default"},
+        )
+        assert res.status_code == 400
+        assert "escapes vault" in res.json()["detail"]
+
+    def test_ingest_pdf_404_for_missing(self, client, fake_embeddings):
+        res = client.post(
+            "/api/vault/ingest/pdf",
+            params={"file_path": "vaults/sample/nope.pdf", "workspace": "default"},
+        )
+        assert res.status_code == 404
+
+    def test_ingest_pdf_rejects_absolute_outside_vault(self, client, fake_embeddings):
+        """Absolute paths that don't resolve inside the vault must be rejected."""
+        res = client.post(
+            "/api/vault/ingest/pdf",
+            params={"file_path": "C:/Windows/win.ini", "workspace": "default"},
+        )
+        assert res.status_code == 400
+        assert "escapes vault" in res.json()["detail"]
+
+
+class TestDirectoryTraversalAllEndpoints:
+    """Comprehensive directory-traversal tests across every endpoint that
+    accepts a filesystem path.
+
+    There are two layers to test:
+
+    1. **Guard functions directly** (``_resolve_vault_path`` /
+       ``_validate_path_within_vault``) — these catch literal ``..`` payloads
+       *before* any HTTP transport layer.  httpx (the TestClient backend)
+       normalizes dot-segments in the URL path, so these payloads must be
+       tested at the function level.
+
+    2. **HTTP route level** — payloads that survive URL normalization
+       (percent-encoded ``..``, absolute paths, etc.) are sent through the
+       actual routes to verify the full request lifecycle.
+    """
+
+    # Payloads that must be rejected — tested at the guard function level
+    # because httpx normalizes literal ``..`` in URL paths before the server
+    # sees them (PUT/DELETE end up at the static mount → 405 instead of 400).
+    LITERAL_TRAVERSAL_PAYLOADS = [
+        "../backend/main.py",
+        "../../backend/main.py",
+        "subdir/../../backend/main.py",
+    ]
+
+    # Payloads that survive URL normalization — tested at the HTTP route level.
+    HTTP_TRAVERSAL_PAYLOADS = [
+        "C:/Windows/win.ini",
+        "/etc/passwd",
+        "..%2F..%2Fbackend%2Fmain.py",
+        "%2E%2E%2Fbackend%2Fmain.py",
+    ]
+
+    def test_resolve_vault_path_rejects_literal_traversal(self):
+        """Guard function rejects literal ``..`` payloads directly."""
+        import pytest
+        from fastapi import HTTPException
+        from main import _resolve_vault_path
+
+        for payload in self.LITERAL_TRAVERSAL_PAYLOADS:
+            with pytest.raises(HTTPException) as exc_info:
+                _resolve_vault_path(payload)
+            assert exc_info.value.status_code == 400
+            assert "escapes vault" in exc_info.value.detail
+
+    def test_validate_path_rejects_literal_traversal(self):
+        """Path guard rejects literal ``..`` payloads directly."""
+        import pytest
+        from fastapi import HTTPException
+        from main import _validate_path_within_vault
+
+        for payload in self.LITERAL_TRAVERSAL_PAYLOADS:
+            with pytest.raises(HTTPException) as exc_info:
+                _validate_path_within_vault(payload)
+            assert exc_info.value.status_code in (400, 404)
+
+    def test_ingest_file_blocks_http_traversal_payloads(self, client, notes_client):
+        client, _ = notes_client
+        for payload in self.HTTP_TRAVERSAL_PAYLOADS:
+            res = client.post(
+                "/api/vault/ingest/file",
+                params={"path": payload},
+            )
+            assert res.status_code in (400, 404), (
+                f"payload {payload!r} yielded {res.status_code}, expected 400/404"
+            )
+
+    def test_ingest_pdf_blocks_http_traversal_payloads(self, client, notes_client):
+        client, _ = notes_client
+        for payload in self.HTTP_TRAVERSAL_PAYLOADS:
+            res = client.post(
+                "/api/vault/ingest/pdf",
+                params={"file_path": payload, "workspace": "default"},
+            )
+            assert res.status_code in (400, 404), (
+                f"payload {payload!r} yielded {res.status_code}, expected 400/404"
+            )
+
+    def test_read_note_blocks_http_traversal_payloads(self, client, notes_client):
+        client, _ = notes_client
+        for payload in self.HTTP_TRAVERSAL_PAYLOADS:
+            res = client.get(f"/api/notes/{payload}")
+            assert res.status_code in (400, 404), (
+                f"payload {payload!r} yielded {res.status_code}, expected 400/404"
+            )
+
+    def test_update_note_blocks_http_traversal_payloads(self, client, notes_client):
+        client, _ = notes_client
+        for payload in self.HTTP_TRAVERSAL_PAYLOADS:
+            res = client.put(
+                f"/api/notes/{payload}",
+                json={"path": payload, "content": "# x", "workspace": "default"},
+            )
+            assert res.status_code in (400, 404), (
+                f"payload {payload!r} yielded {res.status_code}, expected 400/404"
+            )
+
+    def test_delete_note_blocks_http_traversal_payloads(self, client, notes_client):
+        client, _ = notes_client
+        for payload in self.HTTP_TRAVERSAL_PAYLOADS:
+            res = client.delete(f"/api/notes/{payload}")
+            assert res.status_code in (400, 404), (
+                f"payload {payload!r} yielded {res.status_code}, expected 400/404"
+            )
+
+
 class TestWorkspaces:
     def test_list_workspaces(self, client, fake_embeddings):
         # First ingest so there are notes to index

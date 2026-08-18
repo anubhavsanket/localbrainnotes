@@ -168,7 +168,7 @@ class TestToolSearchNode:
 
 
 class TestGuardAnswerNode:
-    def test_guard_rewrites_answer_and_increments_repair_count(self):
+    def test_guard_rewrites_answer(self):
         from langchain_core.documents import Document
 
         fake = FakeListChatModel(responses=["Corrected grounded answer."])
@@ -178,10 +178,9 @@ class TestGuardAnswerNode:
             "answer": "A wizard and a unicorn were chosen.",
             "documents": [Document(page_content="Wizards were chosen.", metadata={"note_id": "d.md"})],
             "retrieval_grades": [{"doc": Document(page_content="Wizards were chosen.", metadata={"note_id": "d.md"}), "relevant": True}],
-            "repair_count": 0,
         }
         result = nodes["guard_answer"](state)
-        assert result["repair_count"] == 1
+        assert "repair_count" not in result
         assert "Corrected grounded answer." in result["answer"]
 
 
