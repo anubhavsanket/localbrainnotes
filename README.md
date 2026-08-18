@@ -235,7 +235,9 @@ native window, and kills the backend on exit. The React UI provides **Chat** and
 ```bash
 cd desktop
 npm install
-powershell -ExecutionPolicy Bypass -File bootstrap-toolchain.ps1   # one-time Rust toolchain
+# one-time: install Rust toolchain + WebView2
+#   Windows: powershell -ExecutionPolicy Bypass -File bootstrap-toolchain.ps1
+#   macOS/Linux: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 npm run tauri dev      # dev window (Vite :1420 + Rust shell)
 npm run tauri build    # production installer
 ```
@@ -267,8 +269,8 @@ LocalBrainNotes/
 │   │   └── memory.py        workspace-scoped sqlite chat memory
 │   ├── models/schemas.py    Pydantic request/response schemas
 │   └── db/store.py          JSON-backed vault metadata index
-├── frontend/index.html      minimal chat UI (no build step)
-├── desktop/                 Tauri v2 + React native app (chat + notes editor)
+├── frontend/index.html      full-featured vanilla UI (chat + notes editor, no build step)
+├── desktop/                 Tauri v2 + React native app (chat + notes editor, cross-platform)
 ├── evals/
 │   ├── run_eval.py          RAGAS faithfulness / relevancy / recall / precision (agentic vs naive)
 │   ├── benchmark_speed.py   keyword vs semantic retrieval timing
@@ -285,11 +287,13 @@ LocalBrainNotes/
 
 **Done:**
 - ✅ PDF OCR fallback (Tesseract for image-only PDFs)
-- ✅ Tauri + React native desktop shell (chat + notes editor)
-- ✅ Notes file CRUD API + JSON metadata index
+- ✅ Tauri + React native desktop shell (chat + notes editor, cross-platform)
+- ✅ Notes file CRUD API + JSON metadata index (atomic writes, path-safety guards)
 - ✅ Web-search tool route (dependency-free)
 - ✅ Groundedness guard + context compression + fast-path router
 - ✅ Local Ollama-based RAGAS judge (consistent offline evals)
+- ✅ Vanilla frontend parity (full Notes CRUD, conversation history, health indicator)
+- ✅ Security hardening (path traversal guards on all CRUD endpoints)
 
 **Planned:**
 - **Phase F+**: human-in-the-loop review via LangGraph interrupts
