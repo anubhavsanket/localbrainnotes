@@ -6,16 +6,15 @@ moment in the video where the claim appears.
 """
 import re
 import urllib.request
-from typing import Any, Optional
-
-from youtube_transcript_api import YouTubeTranscriptApi
+from typing import Any
 
 from config import settings
 from rag import embedder as _embedder
 from rag.vectorstore import stable_chunk_id, vectorstore
+from youtube_transcript_api import YouTubeTranscriptApi
 
 
-def _extract_video_id(url: str) -> Optional[str]:
+def _extract_video_id(url: str) -> str | None:
     patterns = [
         r"youtu\.be/([0-9A-Za-z_-]{11})",
         r"v=([0-9A-Za-z_-]{11})",
@@ -37,7 +36,7 @@ def _fetch_video_title(video_id: str) -> str:
             match = re.search(r"<title>(.*?)</title>", html)
             if match:
                 return match.group(1).replace(" - YouTube", "").strip()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     return f"YouTube Video ({video_id})"
 
@@ -47,10 +46,10 @@ def _fetch_transcript(video_id: str) -> list[dict[str, Any]]:
     transcript_list = api.list(video_id)
     try:
         transcript = transcript_list.find_manually_created_transcript(["en"])
-    except Exception:
+    except Exception:  # noqa: BLE001
         try:
             transcript = transcript_list.find_generated_transcript(["en"])
-        except Exception:
+        except Exception:  # noqa: BLE001
             transcript = next(iter(transcript_list))
     return list(transcript.fetch())
 

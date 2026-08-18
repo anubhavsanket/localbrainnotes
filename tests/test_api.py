@@ -4,9 +4,8 @@ Uses an in-memory ChromaDB and monkeypatches the module-level ``vectorstore``
 singleton so no Ollama daemon is required to run these tests.
 """
 import pytest
-from fastapi.testclient import TestClient
-
 import rag.vectorstore as vs_mod
+from fastapi.testclient import TestClient
 
 
 @pytest.fixture
@@ -162,14 +161,14 @@ class TestDirectoryTraversalAllEndpoints:
     # Payloads that must be rejected — tested at the guard function level
     # because httpx normalizes literal ``..`` in URL paths before the server
     # sees them (PUT/DELETE end up at the static mount → 405 instead of 400).
-    LITERAL_TRAVERSAL_PAYLOADS = [
+    LITERAL_TRAVERSAL_PAYLOADS = [  # noqa: RUF012
         "../backend/main.py",
         "../../backend/main.py",
         "subdir/../../backend/main.py",
     ]
 
     # Payloads that survive URL normalization — tested at the HTTP route level.
-    HTTP_TRAVERSAL_PAYLOADS = [
+    HTTP_TRAVERSAL_PAYLOADS = [  # noqa: RUF012
         "C:/Windows/win.ini",
         "/etc/passwd",
         "..%2F..%2Fbackend%2Fmain.py",

@@ -6,15 +6,13 @@ markdown headers, and indexes chunks into the unified vector store. The
 retrieval to a workspace.
 """
 from pathlib import Path
-from typing import Optional
 
 import yaml
+from config import settings
 from langchain_text_splitters import (
     MarkdownHeaderTextSplitter,
     RecursiveCharacterTextSplitter,
 )
-
-from config import settings
 from rag import embedder as _embedder
 from rag.vectorstore import stable_chunk_id, vectorstore
 
@@ -161,7 +159,7 @@ def ingest_file(file_path: str, base_path: str) -> int:
     return vectorstore.upsert_chunks(embedded, workspace=workspace)
 
 
-def ingest_vault(vault_path: Optional[str] = None, workspace_filter: Optional[str] = None) -> int:
+def ingest_vault(vault_path: str | None = None, workspace_filter: str | None = None) -> int:
     """Index every markdown file under ``vault_path``.
 
     When ``workspace_filter`` is set, only notes whose frontmatter declares that

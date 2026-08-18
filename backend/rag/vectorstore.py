@@ -6,13 +6,11 @@ orphan-chunk bug in the affine-lite prototype (re-indexing a note used to
 leave stale vectors behind) and enables cross-workspace search for free.
 """
 import hashlib
-from typing import Optional
 
 import chromadb
+from config import settings
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
-
-from config import settings
 from rag.embedder import embed
 
 HNSW_METADATA = {
@@ -63,7 +61,7 @@ class LocalBrainVectorStore:
     as produced by the ingesters.
     """
 
-    def __init__(self, client: Optional[chromadb.ClientAPI] = None):
+    def __init__(self, client: chromadb.ClientAPI | None = None):
         self._client = client or chromadb.PersistentClient(path=settings.CHROMA_PERSIST_DIR)
 
     @property
@@ -105,8 +103,8 @@ class LocalBrainVectorStore:
         self,
         embedding: list[float],
         n: int = settings.TOP_K,
-        workspace: Optional[str] = None,
-        filter: Optional[dict] = None,
+        workspace: str | None = None,
+        filter: dict | None = None,
         include=("documents", "metadatas", "distances"),
     ) -> dict:
         """Query the single collection. ``workspace=None`` searches every
@@ -126,10 +124,10 @@ class LocalBrainVectorStore:
 
     def get_retriever(
         self,
-        search_type: Optional[str] = None,
-        workspace: Optional[str] = None,
-        k: Optional[int] = None,
-        filter: Optional[dict] = None,
+        search_type: str | None = None,
+        workspace: str | None = None,
+        k: int | None = None,
+        filter: dict | None = None,
     ) -> "WorkspaceRetriever":
         """Build a LangChain retriever bound to a workspace scope."""
         return WorkspaceRetriever(
@@ -146,11 +144,11 @@ class WorkspaceRetriever(BaseRetriever):
     a workspace. Returns ``Document`` objects carrying the note metadata."""
 
     store: LocalBrainVectorStore
-    workspace: Optional[str] = None
+    workspace: str | None = None
     search_type: str = "mmr"
     k: int = settings.TOP_K
     fetch_k: int = settings.MMR_FETCH_K
-    metadata_filter: Optional[dict] = None
+    metadata_filter: dict | None = None
 
     def _get_relevant_documents(self, query: str) -> list[Document]:
         query_embedding = embed(query)

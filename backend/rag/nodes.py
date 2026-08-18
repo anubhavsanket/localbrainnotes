@@ -5,16 +5,16 @@ returns a dict of such functions with the LLM captured in their closures, so
 the graph can be built once and the LLM swapped out without rebuilding.
 """
 import re
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
+from config import settings
 from langchain_core.documents import Document
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-
-from config import settings
-from rag.state import AgentState, REWRITE_MAX
+from rag.state import REWRITE_MAX, AgentState
 
 
 def _as_tags(md_tags: Any) -> list[str]:
@@ -228,7 +228,7 @@ def _stream_writer() -> Any | None:
         from langgraph.config import get_stream_writer
 
         return get_stream_writer()
-    except Exception:
+    except Exception:  # noqa: BLE001
         return None
 
 
@@ -499,11 +499,11 @@ def create_nodes(llm: BaseChatModel) -> dict[str, Callable[[AgentState], dict[st
             vocab["workspace"].append(str(md.get("workspace") or "default"))
             title = md.get("title")
             vocab["title"].append(str(title) if title else "")
-            vocab["path"].append(str((md.get("path") or md.get("note_id", ""))))
+            vocab["path"].append(str(md.get("path") or md.get("note_id", "")))
 
         q_lower = question.lower()
         signals: list[str] = []
-        for kw in sorted(set(t.lower() for t in vocab["tags"])):
+        for kw in sorted({t.lower() for t in vocab["tags"]}):
             if kw and kw in q_lower and len(kw) >= 3:
                 signals.append(kw)
 

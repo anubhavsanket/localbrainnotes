@@ -8,15 +8,13 @@ and SSE streaming.
 """
 import json
 
-import pytest
-
 import chromadb
-from fastapi.testclient import TestClient
-
-import rag.vectorstore as vs_mod
+import pytest
 import rag.graph as graph_mod
-from langchain_core.language_models import FakeListChatModel
+import rag.vectorstore as vs_mod
 from config import settings
+from fastapi.testclient import TestClient
+from langchain_core.language_models import FakeListChatModel
 
 
 @pytest.fixture
@@ -33,7 +31,7 @@ def app_client(tmp_path, monkeypatch, fake_embeddings):
     vs = vs_mod.LocalBrainVectorStore(client=chromadb.Client())
     try:
         vs._client.delete_collection(settings.CHROMA_COLLECTION_NAME)
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     vs_mod.vectorstore = vs
 

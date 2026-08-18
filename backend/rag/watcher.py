@@ -8,12 +8,10 @@ the same editor session).
 import threading
 import time
 from pathlib import Path
-from typing import Optional
-
-from watchdog.events import FileSystemEvent, FileSystemEventHandler
-from watchdog.observers import Observer
 
 from config import settings
+from watchdog.events import FileSystemEvent, FileSystemEventHandler
+from watchdog.observers import Observer
 
 _DEBOUNCE_MS = 500
 _MARKDOWN_SUFFIXES = {".md", ".markdown"}
@@ -22,7 +20,7 @@ _MARKDOWN_SUFFIXES = {".md", ".markdown"}
 class _VaultHandler(FileSystemEventHandler):
     """Debounced handler that re-ingests changed markdown files."""
 
-    def __init__(self, vault_path: str, workspace_filter: Optional[str] = None):
+    def __init__(self, vault_path: str, workspace_filter: str | None = None):
         super().__init__()
         self.vault_path = Path(vault_path).resolve()
         self.workspace_filter = workspace_filter
@@ -63,7 +61,7 @@ class _VaultHandler(FileSystemEventHandler):
                 self._delete_chunks(path_str)
             else:
                 self._index_file(path_str)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             print(f"[watcher] {kind} {path_str}: {exc}")
 
     def _index_file(self, path_str: str) -> None:
@@ -82,8 +80,8 @@ class _VaultHandler(FileSystemEventHandler):
 
 
 def start_watcher(
-    vault_path: Optional[str] = None,
-    workspace_filter: Optional[str] = None,
+    vault_path: str | None = None,
+    workspace_filter: str | None = None,
 ) -> Observer:
     """Start a background thread watching ``vault_path`` for changes."""
     path = str(Path(vault_path or settings.VAULT_PATH).resolve())

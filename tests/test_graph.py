@@ -2,12 +2,8 @@
 
 Uses a FakeListChatModel so no LLM backend is required to run these tests.
 """
-import pytest
-from langchain_core.messages import HumanMessage
 from langchain_core.language_models import FakeListChatModel
-
 from rag.nodes import _parse_route, _parse_yes_no, create_nodes
-
 
 # --- unit tests for parsers ------------------------------------------------
 
@@ -146,7 +142,6 @@ class TestFastpathNode:
 
 class TestToolSearchNode:
     def test_web_search_off_when_disabled(self, monkeypatch):
-        import rag.nodes as nodes_mod
         from config import settings
 
         monkeypatch.setattr(settings, "WEB_SEARCH_ENABLED", False)

@@ -12,11 +12,9 @@ import json
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional
 
+from config import PROJECT_ROOT, settings
 from langchain_core.embeddings import Embeddings
-
-from config import settings, PROJECT_ROOT
 
 # Cache lives under the repo root so it is found regardless of the CWD the
 # server is launched from (README quick-start runs `python main.py` from backend/).

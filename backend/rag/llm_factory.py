@@ -6,11 +6,9 @@ explicit override) and raises a clear error if Ollama is unreachable when
 that provider is selected.
 """
 import os
-from typing import Optional
-
-from langchain_core.language_models import BaseChatModel
 
 from config import settings
+from langchain_core.language_models import BaseChatModel
 
 
 def _ollama_alive(base_url: str) -> bool:
@@ -20,16 +18,16 @@ def _ollama_alive(base_url: str) -> bool:
     try:
         urllib.request.urlopen(f"{base_url}/api/tags", timeout=3)
         return True
-    except Exception:
+    except Exception:  # noqa: BLE001
         return False
 
 
 def get_llm(
-    provider: Optional[str] = None,
-    model: Optional[str] = None,
+    provider: str | None = None,
+    model: str | None = None,
     temperature: float | None = None,
     max_tokens: int | None = None,
-    api_key: Optional[str] = None,
+    api_key: str | None = None,
     **kwargs,
 ) -> BaseChatModel:
     """Build a LangChain chat model for the requested provider.

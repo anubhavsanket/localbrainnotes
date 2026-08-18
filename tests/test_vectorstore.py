@@ -12,26 +12,25 @@ def store(in_memory_client):
     vs = LocalBrainVectorStore(client=in_memory_client)
     try:
         vs._client.delete_collection("localbrain")
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     return vs
 
 
 def _make_chunks(n: int = 5, workspace: str = "default") -> list[dict]:
     """Generate n synthetic chunk dicts with fake embeddings (dim 8)."""
-    import hashlib
 
     chunks = []
     for i in range(n):
         emb = [0.0] * 8
         emb[i % 8] = 1.0
         chunks.append({
-            "id": stable_chunk_id(f"test_note", i),
+            "id": stable_chunk_id("test_note", i),
             "text": f"Chunk {i} about topic {i % 3}",
             "embedding": emb,
             "metadata": {
-                "note_id": f"test_note",
-                "path": f"test_note.md",
+                "note_id": "test_note",
+                "path": "test_note.md",
                 "chunk_index": i,
                 "workspace": workspace,
             },

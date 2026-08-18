@@ -6,11 +6,9 @@ are discarded but the session table retains them for future audit if needed.
 """
 import sqlite3
 from pathlib import Path
-from typing import Optional
-
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
 from config import settings
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
 
 def _default_db_path() -> Path:
@@ -75,7 +73,7 @@ class WorkspaceChatMemoryManager:
 
     # ------------------------------------------------------------------ read
 
-    def load_messages(self, limit: Optional[int] = None) -> list[BaseMessage]:
+    def load_messages(self, limit: int | None = None) -> list[BaseMessage]:
         """Return the most recent messages as LangChain ``BaseMessage`` objects,
         trimmed to the window size. The result is directly usable as the value
         of a ``MessagesPlaceholder`` in a ``ChatPromptTemplate``."""

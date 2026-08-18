@@ -4,9 +4,9 @@ Uses the DuckDuckGo HTML endpoint (no API key, no SDK). The scraper is small
 and defensive: any network/parse failure degrades to ``[]`` so the agent can
 still answer gracefully ("web search unavailable") instead of crashing.
 """
+import re
 import urllib.parse
 import urllib.request
-import re
 
 from langchain_core.documents import Document
 
@@ -31,8 +31,8 @@ def _parse_results(html: str, max_results: int = _MAX_RESULTS) -> list[Document]
     # Each result is a <div class="result ..."> block.
     blocks = re.split(r'class="result\b', html)[1:]
     for block in blocks:
-        title_m = re.search(r'class="result__a"[^>]*>(.*?)</a>', block, re.S)
-        snip_m = re.search(r'class="result__snippet"[^>]*>(.*?)</a>', block, re.S)
+        title_m = re.search(r'class="result__a"[^>]*>(.*?)</a>', block, re.DOTALL)
+        snip_m = re.search(r'class="result__snippet"[^>]*>(.*?)</a>', block, re.DOTALL)
         href_m = re.search(r'class="result__a"\s+href="([^"]+)"', block)
         if not title_m:
             continue
@@ -75,7 +75,7 @@ def web_search(query: str, max_results: int = _MAX_RESULTS) -> list[Document]:
     try:
         with urllib.request.urlopen(req, timeout=_TIMEOUT_SECS) as resp:
             html = resp.read().decode("utf-8", errors="replace")
-    except Exception:
+    except Exception:  # noqa: BLE001
         return []
     return _parse_results(html, max_results)
 
@@ -90,5 +90,5 @@ def web_search_available() -> bool:
         )
         with urllib.request.urlopen(req, timeout=3):
             return True
-    except Exception:
+    except Exception:  # noqa: BLE001
         return False

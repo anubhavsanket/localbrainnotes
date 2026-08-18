@@ -9,7 +9,6 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from typing import Optional
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _INDEX_PATH = _PROJECT_ROOT / "db" / "vault_index.json"
@@ -33,7 +32,7 @@ def load_vault_index() -> dict[str, dict]:
     return _index
 
 
-def save_vault_index(index: Optional[dict] = None) -> None:
+def save_vault_index(index: dict | None = None) -> None:
     """Persist the index to disk atomically.
 
     Writes to a temporary file in the same directory, then uses
@@ -75,7 +74,7 @@ def remove_note(path: str) -> None:
     save_vault_index()
 
 
-def get_notes(workspace: Optional[str] = None) -> list[dict]:
+def get_notes(workspace: str | None = None) -> list[dict]:
     """Return notes as ``[{"path": ..., ...metadata}]``, optionally filtered
     to a single workspace."""
     results = []

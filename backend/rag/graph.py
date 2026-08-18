@@ -16,15 +16,13 @@ The graph is parameterized by an LLM.  ``get_agent_graph()`` is the module-
 level convenience function that builds it once with the default LLM from
 settings.
 """
-from typing import Optional
 
 from langchain_core.language_models import BaseChatModel
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
-
 from rag.llm_factory import get_llm
 from rag.nodes import create_nodes
-from rag.state import AgentState, REWRITE_MAX
+from rag.state import REWRITE_MAX, AgentState
 
 _GENERATE_ROUTES = {"direct", "fastpath", "tool"}  # skip reflection on these
 
@@ -144,7 +142,7 @@ def _after_reflect(state: AgentState) -> str:
 _agent_graph = None
 
 
-def get_agent_graph(llm: Optional[BaseChatModel] = None):
+def get_agent_graph(llm: BaseChatModel | None = None):
     """Return a compiled agent graph (rebuilt when ``llm`` is provided)."""
     global _agent_graph
     if llm is not None:

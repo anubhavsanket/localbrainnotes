@@ -8,21 +8,19 @@ import json
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Optional
 
+from config import settings
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from starlette.requests import Request
-
-from config import settings
 from models.schemas import (
     NoteWrite,
     QueryRequest,
     QueryResponse,
     WorkspaceResponse,
 )
+from starlette.requests import Request
 
 # ---------------------------------------------------------------------------
 # App + middleware
@@ -33,13 +31,13 @@ async def lifespan(app: FastAPI):
     """Start the vault watcher on startup; stop it cleanly on shutdown."""
     global _watcher
     try:
+        from db.store import load_vault_index, rebuild_vault_index_from_disk
         from rag.watcher import start_watcher
-        from db.store import rebuild_vault_index_from_disk, load_vault_index
 
         load_vault_index()  # load existing index
         rebuild_vault_index_from_disk(settings.VAULT_PATH)  # sync with disk
         _watcher = start_watcher(settings.VAULT_PATH)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         print(f"[startup] watcher failed to start: {exc}")
     yield
     if _watcher is not None:
@@ -72,11 +70,11 @@ _watcher = None
 
 @app.post("/api/vault/ingest")
 def ingest_vault(
-    workspace: Optional[str] = Query(None, description="Scope ingestion to a workspace"),
+    workspace: str | None = Query(None, description="Scope ingestion to a workspace"),
 ):
     """Re-ingest the full vault directory (or a single workspace)."""
-    from rag.ingester.vault import ingest_vault as _ingest_vault
     from db.store import rebuild_vault_index_from_disk
+    from rag.ingester.vault import ingest_vault as _ingest_vault
 
     count = _ingest_vault(settings.VAULT_PATH, workspace_filter=workspace)
     # Sync the workspace index so the UI knows about the new files
@@ -92,8 +90,8 @@ def ingest_single_file(path: str):
     arbitrary filesystem paths are rejected to prevent accidental or malicious
     ingestion of non-vault files.
     """
-    from rag.ingester.vault import ingest_file
     from db.store import update_note
+    from rag.ingester.vault import ingest_file
 
     # `path` is a filesystem path (repo-relative or absolute), not a
     # vault-relative note id. Validate it resides in the vault.
@@ -106,7 +104,7 @@ def ingest_single_file(path: str):
         content = _read_utf8(file_path)
         rel, record = _note_record(file_path, content)
         update_note(rel, record)
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass  # non-critical — vector ingest succeeded
 
     return {"status": "indexed", "chunks": count, "file": path}
@@ -148,7 +146,7 @@ def list_workspaces():
 
 
 @app.get("/api/notes")
-def list_notes(workspace: Optional[str] = Query(None)):
+def list_notes(workspace: str | None = Query(None)):
     """List notes in a workspace (or all notes)."""
     from db.store import get_notes
 
@@ -252,7 +250,7 @@ def read_note(note_path: str):
 @app.post("/api/notes")
 def create_note(note: NoteWrite):
     """Create a new note file in the vault (parent dirs auto-created)."""
-    from db.store import remove_note, update_note
+    from db.store import update_note
     from rag.ingester.vault import ingest_file
 
     file_path = _resolve_vault_path(note.path)
@@ -270,7 +268,7 @@ def create_note(note: NoteWrite):
     # (and even then a 500 ms debounce would briefly hide the note).
     try:
         ingest_file(str(file_path), str(settings.VAULT_PATH))
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         # Keep the file + index entry (the note exists on disk; the watcher
         # will retry indexing), but surface the failure instead of hiding it.
         print(f"[notes] inline ingest failed for {note.path}: {exc}")
@@ -292,7 +290,7 @@ def update_note(note_path: str, note: NoteWrite):
     rel, record = _note_record(file_path, note.content)
     try:
         ingest_file(str(file_path), str(settings.VAULT_PATH))
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         print(f"[notes] re-ingest failed for {note_path}: {exc}")
         return {"path": rel, **record, "content": note.content, "warning": f"index failed: {exc}"}
 
@@ -318,7 +316,7 @@ def delete_note(note_path: str):
 
     try:
         vectorstore.delete_note_chunks(rel)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         print(f"[notes] chunk deletion failed for {note_path}: {exc}")
     remove_note(rel)
     return {"status": "deleted", "path": rel}

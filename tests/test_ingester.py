@@ -1,5 +1,4 @@
 """Tests for the vault ingester."""
-import pytest
 
 
 class TestFrontmatter:
@@ -25,14 +24,14 @@ class TestFrontmatter:
         from rag.ingester.vault import parse_frontmatter
 
         raw = "---\n[[invalid yaml\n---\n# Body"
-        meta, body = parse_frontmatter(raw)
+        meta, _ = parse_frontmatter(raw)
         assert meta == {}
 
     def test_handles_frontmatter_with_no_closing(self):
         from rag.ingester.vault import parse_frontmatter
 
         raw = "---\ntitle: Test\n# No closing"
-        meta, body = parse_frontmatter(raw)
+        meta, _ = parse_frontmatter(raw)
         assert meta == {}
 
 
@@ -53,7 +52,6 @@ class TestChunkVaultFile:
 
     def test_stable_ids_are_deterministic(self, sample_vault_path):
         from rag.ingester.vault import chunk_vault_file
-        from rag.vectorstore import stable_chunk_id
 
         c1 = chunk_vault_file(f"{sample_vault_path}/workspace/note1.md", sample_vault_path)
         c2 = chunk_vault_file(f"{sample_vault_path}/workspace/note1.md", sample_vault_path)

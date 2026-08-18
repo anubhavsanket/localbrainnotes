@@ -19,7 +19,6 @@ Each chunk records ``extraction="text" | "ocr" | "mixed"`` so downstream code
 """
 import io
 from pathlib import Path
-from typing import Optional
 
 import fitz  # PyMuPDF
 
@@ -38,10 +37,9 @@ except ImportError:
     pytesseract = None  # type: ignore[assignment]
     _TESSERACT_AVAILABLE = False
 
+from config import settings
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-
-from config import settings
 from rag import embedder as _embedder
 from rag.vectorstore import stable_chunk_id, vectorstore
 
@@ -63,7 +61,7 @@ def _ocr_available() -> bool:
     try:
         pytesseract.get_tesseract_version()
         return True
-    except Exception:
+    except Exception:  # noqa: BLE001
         return False
 
 

@@ -6,8 +6,8 @@ _BACKEND = str(Path(__file__).resolve().parent.parent / "backend")
 if _BACKEND not in sys.path:
     sys.path.insert(0, _BACKEND)
 
-import pytest
 import chromadb
+import pytest
 
 
 @pytest.fixture

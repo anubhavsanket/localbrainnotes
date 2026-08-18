@@ -4,7 +4,7 @@ Every field maps to an environment variable of the same name (see .env.example).
 Defaults are offline-first: Ollama for both the LLM and embeddings.
 """
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -75,10 +75,10 @@ class Settings(BaseSettings):
     OLLAMA_BASE_URL: str = "http://localhost:11434"
 
     # --- API keys (optional cloud upgrade path) -----------------------------
-    OPENAI_API_KEY: Optional[str] = None
-    ANTHROPIC_API_KEY: Optional[str] = None
-    GROQ_API_KEY: Optional[str] = None
-    NVIDIA_API_KEY: Optional[str] = None
+    OPENAI_API_KEY: str | None = None
+    ANTHROPIC_API_KEY: str | None = None
+    GROQ_API_KEY: str | None = None
+    NVIDIA_API_KEY: str | None = None
 
     # --- Evaluation (RAGAS judge) -------------------------------------------
     # Use Ollama by default (offline-first, deterministic, free).
@@ -87,8 +87,8 @@ class Settings(BaseSettings):
     # EVAL_LLM_API_KEY; OPENAI_API_KEY is the fallback.
     EVAL_JUDGE_PROVIDER: Literal["ollama", "openai"] = "ollama"
     EVAL_LLM_MODEL: str = "phi4-mini-localbrain"  # judge model
-    EVAL_LLM_BASE_URL: Optional[str] = None
-    EVAL_LLM_API_KEY: Optional[str] = None
+    EVAL_LLM_BASE_URL: str | None = None
+    EVAL_LLM_API_KEY: str | None = None
 
 
 settings = Settings()
