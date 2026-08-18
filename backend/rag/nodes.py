@@ -14,9 +14,23 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from config import settings
-from rag.state import AgentState
+from rag.state import AgentState, REWRITE_MAX
 
-_REWRITE_MAX = 3
+
+def _as_tags(md_tags: Any) -> list[str]:
+    """Normalize a metadata ``tags`` value to a list of strings.
+
+    Older chunks may carry a YAML scalar string (``tags: project-alpha``) or an
+    empty string instead of a list — both would break ``", ".join(...)`` and the
+    tag filter. This coerces every shape to a clean list.
+    """
+    if not md_tags:
+        return []
+    if isinstance(md_tags, str):
+        return [t.strip() for t in md_tags.split(",") if t.strip()]
+    if isinstance(md_tags, (list, tuple, set)):
+        return [str(t).strip() for t in md_tags if str(t).strip()]
+    return [str(md_tags).strip()]
 
 # ---------------------------------------------------------------------------
 # Prompt templates (kept module-level so they are easy to A/B test)
@@ -261,7 +275,7 @@ def create_nodes(llm: BaseChatModel) -> dict[str, Callable[[AgentState], dict[st
             title = md.get("title")
             heading_path = md.get("heading_path") or []
             workspace = md.get("workspace") or "default"
-            tags = md.get("tags") or []
+            tags = _as_tags(md.get("tags"))
             anchor = f"[{note_id}]"
             extras = []
             if title:
@@ -374,7 +388,7 @@ def create_nodes(llm: BaseChatModel) -> dict[str, Callable[[AgentState], dict[st
     # ---- node: query_rewrite ----------------------------------------------
     def query_rewrite(state: AgentState) -> dict:
         count = state.get("rewrite_count", 0)
-        if count >= _REWRITE_MAX:
+        if count >= REWRITE_MAX:
             return {}  # cycle guard — stop rewriting
         rewritten = rewrite_chain.invoke({"question": state["standalone_question"]})
         return {
@@ -481,7 +495,7 @@ def create_nodes(llm: BaseChatModel) -> dict[str, Callable[[AgentState], dict[st
         vocab: dict[str, list] = {"tags": [], "workspace": [], "title": [], "path": []}
         for d in docs:
             md = d.metadata
-            vocab["tags"] += list(md.get("tags") or [])
+            vocab["tags"] += _as_tags(md.get("tags"))
             vocab["workspace"].append(str(md.get("workspace") or "default"))
             title = md.get("title")
             vocab["title"].append(str(title) if title else "")

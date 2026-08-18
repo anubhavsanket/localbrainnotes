@@ -24,9 +24,8 @@ from langgraph.graph import END, START, StateGraph
 
 from rag.llm_factory import get_llm
 from rag.nodes import create_nodes
-from rag.state import AgentState
+from rag.state import AgentState, REWRITE_MAX
 
-_REWRITE_MAX = 3
 _GENERATE_ROUTES = {"direct", "fastpath", "tool"}  # skip reflection on these
 
 
@@ -103,7 +102,6 @@ def build_graph(llm: BaseChatModel) -> StateGraph:
         _after_reflect,
         {
             "guard": "guard_answer",
-            "rewrite": "query_rewrite",
             "end": END,
         },
     )
@@ -129,18 +127,14 @@ def _after_grade(state: AgentState) -> str:
 
 
 def _after_reflect(state: AgentState) -> str:
-    """If the answer is grounded, return it. Otherwise rewrite in place once
-    (guard), and if the draft still fails, re-retrieve (up to the rewrite cap)."""
+    """If the answer is grounded, return it. Otherwise let guard_answer do one
+    in-place repair; guard_answer always terminates, so no re-entry happens."""
     if state.get("grounded") is True:
         return "end"
     if not state.get("documents") and not state.get("retrieval_grades"):
         # Chit-chat/direct answer with no context to repair against: return.
         return "end"
-    if state.get("repair_count", 0) < 1:
-        return "guard"  # one in-place rewrite attempt
-    if state.get("rewrite_count", 0) >= _REWRITE_MAX:
-        return "end"
-    return "rewrite"
+    return "guard"
 
 
 # ---------------------------------------------------------------------------

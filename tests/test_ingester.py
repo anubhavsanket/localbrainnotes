@@ -104,6 +104,20 @@ class TestChunkVaultFile:
         finally:
             vs_mod.vectorstore = original_store
 
+    def test_string_tags_coerced_to_list(self, tmp_path):
+        """Regression: `tags: project-alpha` (YAML scalar) must NOT be stored
+        and iterated as an individual-character string."""
+        from rag.ingester.vault import chunk_vault_file
+
+        note = tmp_path / "strtags.md"
+        note.write_text("---\nworkspace: work\ntags: project-alpha\n---\n# S\n\nBody.")
+        chunks = chunk_vault_file(str(note), str(tmp_path))
+
+        assert chunks, "expected at least one chunk"
+        tags = chunks[0]["metadata"]["tags"]
+        assert isinstance(tags, list), f"tags should be a list, got {type(tags)}"
+        assert tags == ["project-alpha"]
+
 
 class TestIngestVault:
     def test_counts_all_notes(self, sample_vault_path, fake_embeddings):

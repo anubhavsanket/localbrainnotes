@@ -39,6 +39,7 @@ def notes_client(tmp_path, fake_embeddings):
     """TestClient with VAULT_PATH redirected to a throwaway dir seeded with
     two notes, plus an in-memory Chroma so no Ollama/disk is touched."""
     import chromadb as _cdb
+    import db.store as store_mod
 
     original_store = vs_mod.vectorstore
     vs_mod.vectorstore = vs_mod.LocalBrainVectorStore(client=_cdb.Client())
@@ -50,9 +51,16 @@ def notes_client(tmp_path, fake_embeddings):
     (vault / "work").mkdir(parents=True)
     (vault / "work" / "note1.md").write_text(
         "---\ntitle: Note One\nworkspace: work\n---\n# Note One\n\nContent.",
-encoding="utf-8",
+        encoding="utf-8",
     )
     settings.VAULT_PATH = str(vault)
+
+    # Isolate the JSON vault index so the temp-vault rebuild can't overwrite
+    # the real backend/db/vault_index.json (or leak state between tests).
+    original_index = store_mod._index
+    original_index_path = store_mod._INDEX_PATH
+    store_mod._INDEX_PATH = tmp_path / "vault_index.json"
+    store_mod._index = {}
 
     from main import app
 
@@ -61,6 +69,8 @@ encoding="utf-8",
 
     settings.VAULT_PATH = original_vault
     vs_mod.vectorstore = original_store
+    store_mod._INDEX_PATH = original_index_path
+    store_mod._index = original_index
 
 
 class TestHealthEndpoint:
@@ -86,6 +96,20 @@ class TestVaultIngest:
             params={"path": "vaults/sample/workspace/note1.md"},
         )
         assert res.status_code == 200
+
+    def test_ingest_single_file_rejects_path_escape(self, client, fake_embeddings):
+        """Regression: the vault/ingest/file route must refuse files outside
+        the vault root (was: arbitrary filesystem paths accepted)."""
+        res = client.post(
+            "/api/vault/ingest/file",
+            params={"path": "../backend/main.py"},
+        )
+        assert res.status_code == 400
+        assert "escapes vault" in res.json()["detail"]
+
+    def test_ingest_single_file_404_for_missing(self, client, fake_embeddings):
+        res = client.post("/api/vault/ingest/file", params={"path": "vaults/sample/nope.md"})
+        assert res.status_code == 404
 
 
 class TestWorkspaces:
@@ -217,6 +241,15 @@ class TestNotesCRUD:
         # `..` traversal must never resolve outside the vault root.
         res = client.get("/api/notes/..%2F..%2Fbackend%2Fmain.py")
         assert res.status_code == 400
+
+    def test_non_utf8_note_returns_400(self, notes_client, tmp_path):
+        # Seed a binary/non-UTF-8 file directly inside the throwaway vault.
+        client, vault = notes_client
+        bad = vault / "bad.md"
+        bad.write_bytes(b"\xff\xfe\x00# not utf8")
+        res = client.get("/api/notes/bad.md")
+        assert res.status_code == 400
+        assert "UTF-8" in res.json()["detail"]
 
     def test_create_roundtrip(self, notes_client):
         client, vault = notes_client

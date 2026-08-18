@@ -32,12 +32,11 @@ LocalBrain indexes an Obsidian-style markdown vault using a LangGraph agent loop
 
 ```
 START → router
-  ├── "fastpath"  → retrieve → generate (skips grad/rewrite/reflect for simple facts)
+  ├── "fastpath"  → retrieve → generate (skips grade/rewrite/reflect for simple facts)
   ├── "retrieve"  → retrieve → filter_docs → grade_docs
   │     └── any relevant  → generate → reflect
   │         └── grounded  → END (return answer)
-  │         └── ungrounded→ guard_answer (in-place repair, max GUARD_REPAIR_MAX)
-  │              └── still ungrounded → query_rewrite → retrieve (cycle, max 3)
+  │         └── ungrounded→ guard_answer (one in-place repair) → END
   │     └── none relevant → query_rewrite → retrieve (cycle, max 3)
   ├── "direct"    → generate (chit-chat, no context) → END
   └── "tool"      → tool_search → generate (live web search context) → END
@@ -140,10 +139,12 @@ created: 2026-08-01
 |------------|------------|-------------|--------------------------------------|
 | `title`    | string     | filename    | Display name / citation in answers   |
 | `workspace`| string     | `"default"` | Retrieval scope label                |
-| `tags`     | list       | `[]`        | Metadata (future filtering)          |
+| `tags`     | list       | —           | Metadata; drives the tag-aware pre-filtering step (`filter_docs`) |
 | `created`  | date       | —           | Ordering / context                   |
 
-Notes without frontmatter default to `workspace = "default"`.
+Notes without frontmatter default to `workspace = "default"`. A YAML scalar
+`tags: project-alpha` (without the list brackets) is coerced during ingestion
+to `["project-alpha"]`, so string tags are handled the same as list tags.
 
 ---
 
@@ -152,7 +153,7 @@ Notes without frontmatter default to `workspace = "default"`.
 | Source | Route | Description |
 |--------|-------|-------------|
 | Markdown vault | `POST /api/vault/ingest` | Walk vault, parse frontmatter, chunk by headings |
-| Single markdown file | `POST /api/vault/ingest/file` | Index one file by path |
+| Single markdown file | `POST /api/vault/ingest/file` | Index one note by path — must resolve **inside** `VAULT_PATH` (escapes rejected) |
 | PDF | `POST /api/vault/ingest/pdf` | PyMuPDF extraction + chunking (+ Tesseract OCR fallback for image-only PDFs) |
 | YouTube | `POST /api/vault/ingest/youtube` | Transcript API + timestamped chunks |
 
@@ -187,7 +188,6 @@ All settings live in `backend/config.py` and are overridable via environment var
 | `TOP_K` | `5` | Documents returned per retrieval step |
 | `SIMILARITY_THRESHOLD` | `0.70` | Relevance cutoff for retrieved context |
 | `FASTPATH_ENABLED` | `true` | Route simple factual queries straight to retrieve→generate |
-| `GUARD_REPAIR_MAX` | `1` | Max in-place answer repairs by the groundedness guard |
 | `CONTEXT_MAX_CHARS` | `6000` | Compress retrieved context above this budget (fastpath) |
 | `WEB_SEARCH_ENABLED` | `true` | Allow the `tool` route (DuckDuckGo HTML, no API key) |
 | `MEMORY_WINDOW_SIZE` | `10` | Messages kept per workspace in SQLite |

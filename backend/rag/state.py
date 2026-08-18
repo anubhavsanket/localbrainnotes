@@ -8,6 +8,9 @@ from typing import TypedDict
 
 from langchain_core.documents import Document
 
+# Query-rewrite cycle guard (shared by nodes.py and graph.py).
+REWRITE_MAX = 3
+
 
 class AgentState(TypedDict, total=False):
     """State flowing through the agent loop."""

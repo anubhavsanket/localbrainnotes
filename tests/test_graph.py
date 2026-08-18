@@ -213,6 +213,22 @@ class TestFilterDocs:
         result = nodes["filter_docs"](state)
         assert "documents" not in result  # pass-through
 
+    def test_string_tags_do_not_break_filter(self):
+        """Regression: `tags: project-alpha` (YAML scalar) used to be split
+        into individual characters, making the tag filter silently inert."""
+        from langchain_core.documents import Document
+
+        fake = FakeListChatModel(responses=[])
+        nodes = create_nodes(fake)
+        docs = [
+            Document(page_content="Alpha decisions", metadata={"tags": "project-alpha", "workspace": "work", "note_id": "a.md"}),
+            Document(page_content="Beta decisions", metadata={"tags": ["project-beta"], "workspace": "work", "note_id": "b.md"}),
+        ]
+        state = {"question": "What did project-alpha decide?", "standalone_question": "What did project-alpha decide?", "documents": docs}
+        result = nodes["filter_docs"](state)
+        assert len(result["documents"]) == 1
+        assert result["documents"][0].metadata["tags"] == "project-alpha"
+
 
 class TestCompression:
     def test_context_compression_truncates_long_docs(self):

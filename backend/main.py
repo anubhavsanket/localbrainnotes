@@ -19,8 +19,6 @@ from starlette.requests import Request
 
 from config import settings
 from models.schemas import (
-    NoteCreate,
-    NoteUpdate,
     NoteWrite,
     QueryRequest,
     QueryResponse,
@@ -88,31 +86,33 @@ def ingest_vault(
 
 
 @app.post("/api/vault/ingest/file")
-def ingest_single_file(
-    path: str, workspace: Optional[str] = Query(None, description="Override workspace label"),
-):
-    """Ingest a single markdown file into the vector store."""
+def ingest_single_file(path: str):
+    """Ingest a single markdown file into the vector store.
+
+    The file must live inside the vault (like every other note endpoint);
+    arbitrary filesystem paths are rejected to prevent accidental or malicious
+    ingestion of non-vault files.
+    """
     from rag.ingester.vault import ingest_file
     from db.store import update_note
-    from rag.ingester.vault import parse_frontmatter
 
+    # `path` is a filesystem path (repo-relative or absolute), not a
+    # vault-relative note id. Resolve it, then require it to live inside the
+    # vault so non-vault files can't be indexed accidentally.
+    root = Path(settings.VAULT_PATH).resolve()
     file_path = Path(path).resolve()
-    if not file_path.exists():
+    if not file_path.is_relative_to(root):
+        raise HTTPException(status_code=400, detail=f"path escapes vault: {path}")
+    if not file_path.is_file():
         raise HTTPException(status_code=404, detail=f"File not found: {path}")
+
     count = ingest_file(str(file_path), settings.VAULT_PATH)
 
-    # Update vault index metadata for this file
+    # Update vault index metadata for this file (best-effort, non-fatal).
     try:
-        rel = file_path.resolve().relative_to(Path(settings.VAULT_PATH).resolve()).as_posix()
-        raw = file_path.read_text(encoding="utf-8")
-        meta, _ = parse_frontmatter(raw)
-        stat = file_path.stat()
-        update_note(rel, {
-            "workspace": str(meta.get("workspace") or "default"),
-            "title": meta.get("title") or file_path.stem,
-            "mtime": stat.st_mtime,
-            "size": stat.st_size,
-        })
+        content = _read_utf8(file_path)
+        rel, record = _note_record(file_path, content)
+        update_note(rel, record)
     except Exception:
         pass  # non-critical — vector ingest succeeded
 
@@ -121,10 +121,15 @@ def ingest_single_file(
 
 @app.post("/api/vault/ingest/pdf")
 def ingest_pdf(file_path: str, workspace: str = "default"):
-    """Index a PDF file into the vector store."""
+    """Index a PDF file into the vector store (any local path is allowed;
+    only existence + readability are enforced)."""
     from rag.ingester.pdf import ingest_pdf as _ingest_pdf
 
-    count = _ingest_pdf(file_path, workspace)
+    candidate = Path(file_path).resolve()
+    if not candidate.is_file():
+        raise HTTPException(status_code=404, detail=f"PDF not found: {file_path}")
+
+    count = _ingest_pdf(str(candidate), workspace)
     return {"status": "indexed", "chunks": count, "file": file_path}
 
 
@@ -133,7 +138,8 @@ def ingest_youtube(url: str, workspace: str = "default"):
     """Index a YouTube transcript into the vector store."""
     from rag.ingester.youtube import ingest_youtube as _ingest_youtube
 
-    count = _ingest_youtube(url, workspace)
+    parsed = _validate_youtube_url(url)
+    count = _ingest_youtube(parsed, workspace)
     return {"status": "indexed", "chunks": count, "url": url}
 
 
@@ -172,15 +178,26 @@ def _resolve_vault_path(rel_path: str) -> Path:
     return target
 
 
-def _note_meta_from_disk(vault_root: Path, file_path: Path) -> dict:
-    """Rebuild a note's metadata dict from its file, mirroring the index."""
-    from db.store import update_note
+def _read_utf8(file_path: Path) -> str:
+    """Read a file as UTF-8, translating decode errors into a client-facing 400."""
+    try:
+        return file_path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"file is not valid UTF-8 text: {file_path.name}",
+        ) from None
+
+
+def _note_record(file_path: Path, content: str) -> tuple[str, dict]:
+    """Build (relative_path, metadata) for a note purely from its content —
+    no index writes, no second disk read. Mirrors the ingester's metadata."""
+    from config import settings
     from rag.ingester.vault import parse_frontmatter
 
-    root = Path(vault_root).resolve()
+    root = Path(settings.VAULT_PATH).resolve()
     rel = file_path.resolve().relative_to(root).as_posix()
-    raw = file_path.read_text(encoding="utf-8")
-    meta, _ = parse_frontmatter(raw)
+    meta, _ = parse_frontmatter(content)
     stat = file_path.stat()
     record = {
         "workspace": str(meta.get("workspace") or "default"),
@@ -188,31 +205,39 @@ def _note_meta_from_disk(vault_root: Path, file_path: Path) -> dict:
         "mtime": stat.st_mtime,
         "size": stat.st_size,
     }
-    update_note(rel, record)
-    return {"path": rel, **record}
+    return rel, record
+
+
+def _validate_youtube_url(url: str) -> str:
+    """Reject malformed or non-YouTube URLs before handing them to the ingester."""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme not in ("http", "https") or not host:
+        raise HTTPException(status_code=400, detail=f"invalid URL: {url}")
+    if not any(host == d or host.endswith(f".{d}") for d in ("youtube.com", "youtu.be")):
+        raise HTTPException(status_code=400, detail=f"not a YouTube URL: {url}")
+    return url
 
 
 @app.get("/api/notes/{note_path:path}")
 def read_note(note_path: str):
     """Read a note's markdown content and metadata from the vault."""
-    from config import settings
-
     file_path = _resolve_vault_path(note_path)
     if not file_path.is_file():
         raise HTTPException(status_code=404, detail=f"note not found: {note_path}")
 
-    content = file_path.read_text(encoding="utf-8")
-    meta = _note_meta_from_disk(settings.VAULT_PATH, file_path)
-    return {**meta, "content": content}
+    content = _read_utf8(file_path)
+    rel, record = _note_record(file_path, content)
+    return {"path": rel, **record, "content": content}
 
 
 @app.post("/api/notes")
 def create_note(note: NoteWrite):
     """Create a new note file in the vault (parent dirs auto-created)."""
-    import os
-
-    from config import settings
-    from rag.vectorstore import vectorstore
+    from db.store import remove_note, update_note
+    from rag.ingester.vault import ingest_file
 
     file_path = _resolve_vault_path(note.path)
     if file_path.exists():
@@ -222,24 +247,25 @@ def create_note(note: NoteWrite):
     body = note.content or f"# {file_path.stem}\n"
     file_path.write_text(body, encoding="utf-8")
 
-    meta = _note_meta_from_disk(settings.VAULT_PATH, file_path)
+    rel, record = _note_record(file_path, body)
+    update_note(rel, record)
 
     # Immediately index, since the FS watcher applies only when running
     # (and even then a 500 ms debounce would briefly hide the note).
     try:
-        from rag.ingester.vault import ingest_file
-
         ingest_file(str(file_path), str(settings.VAULT_PATH))
     except Exception as exc:
+        # Keep the file + index entry (the note exists on disk; the watcher
+        # will retry indexing), but surface the failure instead of hiding it.
         print(f"[notes] inline ingest failed for {note.path}: {exc}")
+        return {"path": rel, **record, "content": body, "warning": f"index failed: {exc}"}
 
-    return {**meta, "content": body}
+    return {"path": rel, **record, "content": body}
 
 
 @app.put("/api/notes/{note_path:path}")
 def update_note(note_path: str, note: NoteWrite):
     """Overwrite a note's content; re-indexes the vector store."""
-    from config import settings
     from rag.ingester.vault import ingest_file
 
     file_path = _resolve_vault_path(note_path)
@@ -247,19 +273,23 @@ def update_note(note_path: str, note: NoteWrite):
         raise HTTPException(status_code=404, detail=f"note not found: {note_path}")
 
     file_path.write_text(note.content, encoding="utf-8")
-    meta = _note_meta_from_disk(settings.VAULT_PATH, file_path)
+    rel, record = _note_record(file_path, note.content)
     try:
         ingest_file(str(file_path), str(settings.VAULT_PATH))
     except Exception as exc:
         print(f"[notes] re-ingest failed for {note_path}: {exc}")
+        return {"path": rel, **record, "content": note.content, "warning": f"index failed: {exc}"}
 
-    return {**meta, "content": note.content}
+    return {"path": rel, **record, "content": note.content}
 
 
 @app.delete("/api/notes/{note_path:path}")
 def delete_note(note_path: str):
-    """Delete a note file from the vault and drop its vector chunks."""
-    from config import settings
+    """Delete a note file from the vault and drop its vector chunks.
+
+    Ordering matters: the file is unlinked *first* so a failed unlink cannot
+    leave a note that is listed but has already lost its chunks. Cleanup uses
+    the normalized relative path so chunk ids always match."""
     from db.store import remove_note
     from rag.vectorstore import vectorstore
 
@@ -267,14 +297,15 @@ def delete_note(note_path: str):
     if not file_path.is_file():
         raise HTTPException(status_code=404, detail=f"note not found: {note_path}")
 
+    rel = file_path.resolve().relative_to(Path(settings.VAULT_PATH).resolve()).as_posix()
+    file_path.unlink()
+
     try:
-        vectorstore.delete_note_chunks(note_path)
+        vectorstore.delete_note_chunks(rel)
     except Exception as exc:
         print(f"[notes] chunk deletion failed for {note_path}: {exc}")
-
-    file_path.unlink()
-    remove_note(note_path)
-    return {"status": "deleted", "path": note_path}
+    remove_note(rel)
+    return {"status": "deleted", "path": rel}
 
 
 # ---------------------------------------------------------------------------

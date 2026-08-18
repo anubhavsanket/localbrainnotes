@@ -68,8 +68,9 @@ def rebuild_vault_index_from_disk(vault_path: str) -> int:
     """Walk ``vault_path`` and (re-)populate the index from the filesystem.
 
     Notes that no longer exist on disk are pruned. Returns the total note count.
+    A single disk write batches the walk (per-note writes would serialize the
+    JSON once per file).
     """
-    from config import settings
     from rag.ingester.vault import parse_frontmatter
 
     root = Path(vault_path).resolve()
@@ -81,22 +82,24 @@ def rebuild_vault_index_from_disk(vault_path: str) -> int:
             continue
         rel = file_path.resolve().relative_to(root).as_posix()
         stat = file_path.stat()
-        raw = file_path.read_text(encoding="utf-8")
+        try:
+            raw = file_path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            print(f"[store] skipping non-UTF-8 file: {rel}")
+            continue
         meta, _ = parse_frontmatter(raw)
-        update_note(
-            rel,
-            {
-                "workspace": str(meta.get("workspace") or "default"),
-                "title": meta.get("title") or file_path.stem,
-                "mtime": stat.st_mtime,
-                "size": stat.st_size,
-            },
-        )
+        _index[rel] = {
+            "workspace": str(meta.get("workspace") or "default"),
+            "title": meta.get("title") or file_path.stem,
+            "mtime": stat.st_mtime,
+            "size": stat.st_size,
+        }
         seen.add(rel)
 
-    # Prune notes that no longer exist on disk
+    # Prune notes that no longer exist on disk (mutate in place, no per-file write).
     for path in list(_index):
         if path not in seen:
-            remove_note(path)
+            _index.pop(path, None)
 
+    save_vault_index()
     return len(seen)

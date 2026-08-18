@@ -2,18 +2,6 @@
 from pydantic import BaseModel
 
 
-class NoteCreate(BaseModel):
-    """A single note body sent to the API (kept for endpoint compatibility)."""
-    id: str
-    content: str
-    workspace: str = "default"
-
-
-class NoteUpdate(BaseModel):
-    content: str
-    workspace: str = "default"
-
-
 class NoteWrite(BaseModel):
     """Payload for creating/updating a note file in the vault."""
     path: str
@@ -24,7 +12,6 @@ class NoteWrite(BaseModel):
 class QueryRequest(BaseModel):
     question: str
     workspace: str = "default"
-    has_images: bool = False
 
 
 class QueryResponse(BaseModel):

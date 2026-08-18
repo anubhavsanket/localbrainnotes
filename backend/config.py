@@ -59,8 +59,6 @@ class Settings(BaseSettings):
     # When the router classifies a query as "fastpath", skip the
     # grade→rewrite→reflect cycle and go straight from retrieve→generate.
     FASTPATH_ENABLED: bool = True
-    # Groundedness-guard rewrite cap (how many in-place answer repairs allowed).
-    GUARD_REPAIR_MAX: int = 1
     # Context compression budget: retrieved context above this many characters
     # is trimmed to the most question-relevant sentences before generation.
     CONTEXT_MAX_CHARS: int = 6000
