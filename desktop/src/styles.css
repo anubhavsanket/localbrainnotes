@@ -347,6 +347,48 @@ header h1 {
   cursor: not-allowed;
 }
 
+/* --- review panel -------------------------------------------------------- */
+.review-panel {
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+.review-draft { margin-bottom: 10px; }
+.review-actions { display: flex; gap: 8px; align-items: center; }
+.review-actions button {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.review-approve { background: #22543d; color: #68d391; border-color: #276749; }
+.review-approve:hover { background: #276749; }
+.review-reject { background: transparent; color: var(--muted); }
+.review-reject:hover { color: var(--err); border-color: var(--err); }
+.review-feedback {
+  flex: 1;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 0.82rem;
+  font-family: inherit;
+}
+.review-feedback:focus { outline: none; border-color: var(--accent); }
+.review-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+.review-toggle input { accent-color: var(--accent); }
+
 /* --- view switcher --- */
 .brand {
   display: flex;

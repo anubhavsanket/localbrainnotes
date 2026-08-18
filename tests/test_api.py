@@ -283,6 +283,11 @@ class _FakeGraph:
         self.input_state = None
         self.config = None
 
+    def invoke(self, input_state, config=None):
+        self.input_state = input_state
+        self.config = config
+        return {"answer": "Hello from the agent.", "sources": ["note1.md"]}
+
     async def astream(self, input_state, stream_mode=None, config=None):
         self.input_state = input_state
         self.config = config
@@ -353,6 +358,105 @@ class TestQueryStream:
         roles = [m["role"] for m in data["messages"]]
         assert roles == ["human", "ai"]
         assert "Hello from" in data["messages"][1]["content"]
+
+
+# ---------------------------------------------------------------------------
+# Human-in-the-loop review (Phase F+)
+# ---------------------------------------------------------------------------
+
+
+class TestHumanInTheLoop:
+    def test_preview_returns_draft_without_saving(self, client, monkeypatch):
+        """POST /api/query/preview returns a draft + query_id but does NOT
+        persist to conversation memory."""
+        import rag.graph as graph_mod
+
+        monkeypatch.setattr(graph_mod, "get_agent_graph", lambda llm=None: _FakeGraph())
+        res = client.post(
+            "/api/query/preview",
+            json={"question": "What is CRDT?", "workspace": "review"},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert "query_id" in data
+        assert data["answer"] == "Hello from the agent."
+        assert data["sources"] == ["note1.md"]
+
+        # Must NOT appear in history yet.
+        hist = client.get("/api/history", params={"workspace": "review"}).json()
+        assert hist["count"] == 0
+
+    def test_approve_saves_to_memory(self, client, monkeypatch):
+        """POST /api/query/{id}/approve persists the draft to memory."""
+        import rag.graph as graph_mod
+
+        monkeypatch.setattr(graph_mod, "get_agent_graph", lambda llm=None: _FakeGraph())
+        preview = client.post(
+            "/api/query/preview",
+            json={"question": "Explain local-first", "workspace": "approve_test"},
+        ).json()
+        qid = preview["query_id"]
+
+        res = client.post(f"/api/query/{qid}/approve")
+        assert res.status_code == 200
+        assert res.json()["status"] == "approved"
+        assert res.json()["answer"] == "Hello from the agent."
+
+        # Now it should appear in history.
+        hist = client.get("/api/history", params={"workspace": "approve_test"}).json()
+        assert hist["count"] == 2
+        assert hist["messages"][0]["role"] == "human"
+        assert hist["messages"][1]["role"] == "ai"
+
+    def test_reject_regenerates_with_feedback(self, client, monkeypatch):
+        """POST /api/query/{id}/reject re-runs the agent with feedback."""
+        import rag.graph as graph_mod
+
+        call_count = 0
+
+        class _FakeGraphWithFeedback:
+            def __init__(self):
+                self.input_state = None
+                self.config = None
+
+            async def astream(self, input_state, stream_mode=None, config=None):
+                yield ("values", {})
+
+            def invoke(self, input_state, config=None):
+                nonlocal call_count
+                call_count += 1
+                self.input_state = input_state
+                self.config = config
+                if call_count == 1:
+                    return {"answer": "First draft", "sources": ["a.md"]}
+                return {"answer": "Improved answer", "sources": ["a.md", "b.md"]}
+
+        monkeypatch.setattr(graph_mod, "get_agent_graph", lambda llm=None: _FakeGraphWithFeedback())
+        preview = client.post(
+            "/api/query/preview",
+            json={"question": "What is sync?", "workspace": "reject_test"},
+        ).json()
+
+        res = client.post(
+            f"/api/query/{preview['query_id']}/reject",
+            params={"feedback": "Too vague, be more specific"},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["status"] == "regenerated"
+        assert data["answer"] == "Improved answer"
+        assert call_count == 2
+
+    def test_approve_expired_returns_404(self, client, monkeypatch):
+        """Approving a non-existent / expired review returns 404."""
+        res = client.post("/api/query/nonexistent/approve")
+        assert res.status_code == 404
+        assert "expired" in res.json()["detail"].lower()
+
+    def test_reject_expired_returns_404(self, client, monkeypatch):
+        """Rejecting a non-existent / expired review returns 404."""
+        res = client.post("/api/query/nonexistent/reject")
+        assert res.status_code == 404
 
 
 class TestNotesCRUD:

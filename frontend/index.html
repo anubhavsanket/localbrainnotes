@@ -120,6 +120,30 @@
     .input-bar button:hover:not(:disabled) { background: var(--accent-hover); }
     .input-bar button:disabled { opacity: 0.4; cursor: not-allowed; }
 
+    /* --- review panel ------------------------------------------------------ */
+    .review-panel {
+      padding: 12px 20px; border-top: 1px solid var(--border); background: var(--surface);
+    }
+    .review-draft { margin-bottom: 10px; }
+    .review-actions { display: flex; gap: 8px; align-items: center; }
+    .review-actions button {
+      border: 1px solid var(--border); border-radius: 6px; padding: 6px 14px;
+      font-size: 0.85rem; cursor: pointer; transition: color 0.15s, border-color 0.15s, background 0.15s;
+    }
+    .review-approve { background: #22543d; color: #68d391; border-color: #276749; }
+    .review-approve:hover { background: #276749; }
+    .review-reject { background: transparent; color: var(--muted); }
+    .review-reject:hover { color: var(--err); border-color: var(--err); }
+    .review-feedback {
+      flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--border);
+      border-radius: 6px; padding: 6px 10px; font-size: 0.82rem; font-family: inherit;
+    }
+    .review-feedback:focus { outline: none; border-color: var(--accent); }
+    .review-toggle {
+      display: flex; align-items: center; gap: 6px; font-size: 0.78rem; color: var(--muted); cursor: pointer; user-select: none;
+    }
+    .review-toggle input { accent-color: var(--accent); }
+
     /* --- notes view ------------------------------------------------------- */
     .notes-view { flex: 1; display: flex; min-height: 0; }
     .notes-sidebar {
@@ -199,7 +223,9 @@
   <footer id="input-bar" class="input-bar hidden">
     <textarea id="input" placeholder="Ask a question…" rows="1"></textarea>
     <button id="btn-send">Send</button>
+    <label class="review-toggle"><input type="checkbox" id="review-mode"> Review</label>
   </footer>
+  <div id="review-panel" class="review-panel hidden"></div>
 
   <!-- notes view -->
   <div id="notes-view" class="notes-view hidden">
@@ -360,12 +386,22 @@ async function loadHistory() {
 async function sendChat() {
   const text = document.getElementById('input').value.trim();
   if (!text || sending || !backendOk) return;
+  const reviewMode = document.getElementById('review-mode').checked;
   sending = true;
   document.getElementById('btn-send').disabled = true;
   document.getElementById('input').value = '';
   document.getElementById('input').style.height = 'auto';
   messages.push({ role: 'user', content: text });
   addMsg('user', text);
+
+  if (reviewMode) {
+    await sendPreview(text);
+  } else {
+    await sendStream(text);
+  }
+}
+
+async function sendStream(text) {
   const aiDiv = addMsg('ai', '');
   const body = aiDiv.querySelector('.md');
   let full = '';
@@ -385,6 +421,89 @@ async function sendChat() {
   sending = false;
   document.getElementById('btn-send').disabled = false;
   document.getElementById('input').focus();
+}
+
+async function sendPreview(text) {
+  const aiDiv = addMsg('ai', '');
+  const body = aiDiv.querySelector('.md');
+  body.textContent = 'Generating draft…';
+  try {
+    const data = await api('/api/query/preview', { method: 'POST', body: JSON.stringify({ question: text, workspace }) });
+    body.innerHTML = renderMarkdown(data.answer);
+    showReviewPanel(data.query_id, data.answer, data.sources);
+  } catch (err) { body.textContent = 'Error: ' + err.message; }
+  sending = false;
+  document.getElementById('btn-send').disabled = false;
+}
+
+function showReviewPanel(queryId, answer, sources) {
+  const panel = document.getElementById('review-panel');
+  panel.classList.remove('hidden');
+  panel.innerHTML = '';
+  const draft = document.createElement('div');
+  draft.className = 'review-draft';
+  const label = document.createElement('div');
+  label.className = 'label';
+  label.textContent = 'Draft answer — review before approving';
+  draft.appendChild(label);
+  const md = document.createElement('div');
+  md.className = 'md';
+  md.innerHTML = renderMarkdown(answer);
+  draft.appendChild(md);
+  if (sources && sources.length) {
+    const wrap = document.createElement('div'); wrap.className = 'sources';
+    const det = document.createElement('details'); const sum = document.createElement('summary');
+    sum.textContent = 'Sources (' + sources.length + ')'; det.appendChild(sum);
+    sources.forEach(s => { const t = document.createElement('span'); t.className = 'tag'; t.textContent = s; det.appendChild(t); });
+    wrap.appendChild(det); draft.appendChild(wrap);
+  }
+  panel.appendChild(draft);
+  const actions = document.createElement('div');
+  actions.className = 'review-actions';
+  const approveBtn = document.createElement('button');
+  approveBtn.className = 'review-approve';
+  approveBtn.textContent = 'Approve';
+  approveBtn.onclick = () => approveReview(queryId);
+  actions.appendChild(approveBtn);
+  const feedback = document.createElement('input');
+  feedback.className = 'review-feedback';
+  feedback.placeholder = 'Feedback for regeneration (optional)…';
+  feedback.id = 'review-feedback';
+  actions.appendChild(feedback);
+  const rejectBtn = document.createElement('button');
+  rejectBtn.className = 'review-reject';
+  rejectBtn.textContent = 'Reject & Regenerate';
+  rejectBtn.onclick = () => rejectReview(queryId);
+  actions.appendChild(rejectBtn);
+  panel.appendChild(actions);
+  panel.scrollIntoView({ behavior: 'smooth' });
+}
+
+async function approveReview(queryId) {
+  const panel = document.getElementById('review-panel');
+  panel.classList.add('hidden');
+  try {
+    const data = await api('/api/query/' + queryId + '/approve', { method: 'POST' });
+    messages.push({ role: 'ai', content: data.answer, sources: data.sources });
+    addMsg('system', 'Answer approved and saved to conversation history.');
+  } catch (err) { addMsg('system', 'Error: ' + err.message); }
+}
+
+async function rejectReview(queryId) {
+  const feedback = (document.getElementById('review-feedback') || {}).value || '';
+  const panel = document.getElementById('review-panel');
+  panel.classList.add('hidden');
+  const aiDiv = addMsg('ai', '');
+  const body = aiDiv.querySelector('.md');
+  body.textContent = 'Regenerating with feedback…';
+  try {
+    const data = await api('/api/query/' + queryId + '/reject', {
+      method: 'POST', body: JSON.stringify({ feedback }),
+    });
+    body.innerHTML = renderMarkdown(data.answer);
+    messages.push({ role: 'ai', content: data.answer, sources: data.sources });
+    showReviewPanel(null, data.answer, data.sources);
+  } catch (err) { body.textContent = 'Error: ' + err.message; }
 }
 
 // ===== Notes ================================================================

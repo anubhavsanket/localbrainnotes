@@ -419,6 +419,141 @@ async def query_notes_stream(req: QueryRequest, request: Request):
 
 
 # ---------------------------------------------------------------------------
+# Human-in-the-loop review (Phase F+)
+# ---------------------------------------------------------------------------
+
+import uuid
+
+# In-memory store for pending reviews.  Keyed by query_id (UUID).
+# Each entry holds the draft answer, sources, and the original state needed
+# to resume or discard.  Entries expire after 30 minutes.
+_pending_reviews: dict[str, dict] = {}
+_REVIEW_TTL_SECS = 30 * 60
+
+
+def _cleanup_stale_reviews() -> None:
+    """Drop entries older than ``_REVIEW_TTL_SECS``."""
+    now = time.time()
+    stale = [k for k, v in _pending_reviews.items() if now - v["created_at"] > _REVIEW_TTL_SECS]
+    for k in stale:
+        _pending_reviews.pop(k, None)
+
+
+@app.post("/api/query/preview")
+def query_preview(req: QueryRequest):
+    """Run the agent loop and return a draft answer for human review.
+
+    The draft is NOT saved to conversation memory.  The caller must later
+    call ``/api/query/{query_id}/approve`` to persist it, or
+    ``/api/query/{query_id}/reject`` to regenerate with feedback.
+    """
+    from rag.memory import WorkspaceChatMemoryManager
+
+    _cleanup_stale_reviews()
+
+    memory = WorkspaceChatMemoryManager(workspace=req.workspace)
+    chat_history = memory.load_messages()
+
+    graph = _build_agent_graph()
+    input_state = {
+        "question": req.question,
+        "workspace": req.workspace,
+        "chat_history": chat_history,
+        "rewrite_count": 0,
+    }
+
+    start = time.time()
+    result = graph.invoke(input_state, config={"configurable": {"thread_id": f"preview-{uuid.uuid4().hex[:8]}"}})
+    elapsed = round(time.time() - start, 2)
+
+    query_id = uuid.uuid4().hex[:12]
+    _pending_reviews[query_id] = {
+        "question": req.question,
+        "workspace": req.workspace,
+        "answer": result.get("answer", ""),
+        "sources": result.get("sources", []),
+        "latency_seconds": elapsed,
+        "created_at": time.time(),
+    }
+
+    return {
+        "query_id": query_id,
+        "answer": result.get("answer", ""),
+        "sources": result.get("sources", []),
+        "latency_seconds": elapsed,
+    }
+
+
+@app.post("/api/query/{query_id}/approve")
+def approve_answer(query_id: str):
+    """Approve a previewed answer — saves it to conversation memory and
+    returns it as the final response."""
+    review = _pending_reviews.pop(query_id, None)
+    if review is None:
+        raise HTTPException(status_code=404, detail="Review session expired or not found")
+
+    from rag.memory import WorkspaceChatMemoryManager
+
+    memory = WorkspaceChatMemoryManager(workspace=review["workspace"])
+    memory.save_message("human", review["question"])
+    memory.save_message("ai", review["answer"])
+
+    return {
+        "status": "approved",
+        "answer": review["answer"],
+        "sources": review["sources"],
+        "latency_seconds": review["latency_seconds"],
+    }
+
+
+@app.post("/api/query/{query_id}/reject")
+def reject_answer(query_id: str, feedback: str = ""):
+    """Reject a previewed answer — re-runs the agent with the user's
+    feedback appended to the question, then saves the new answer."""
+    review = _pending_reviews.pop(query_id, None)
+    if review is None:
+        raise HTTPException(status_code=404, detail="Review session expired or not found")
+
+    # Build a new question that includes the rejection feedback.
+    if feedback.strip():
+        new_question = (
+            f"{review['question']}\n\n"
+            f"[User feedback on previous answer: {feedback.strip()}]\n"
+            f"Please regenerate your answer taking this feedback into account."
+        )
+    else:
+        new_question = review["question"]
+
+    from rag.memory import WorkspaceChatMemoryManager
+
+    memory = WorkspaceChatMemoryManager(workspace=review["workspace"])
+    chat_history = memory.load_messages()
+
+    graph = _build_agent_graph()
+    input_state = {
+        "question": new_question,
+        "workspace": review["workspace"],
+        "chat_history": chat_history,
+        "rewrite_count": 0,
+    }
+
+    start = time.time()
+    result = graph.invoke(input_state, config={"configurable": {"thread_id": f"reject-{uuid.uuid4().hex[:8]}"}})
+    elapsed = round(time.time() - start, 2)
+
+    # Save both the original question and the new answer.
+    memory.save_message("human", review["question"])
+    memory.save_message("ai", result.get("answer", ""))
+
+    return {
+        "status": "regenerated",
+        "answer": result.get("answer", ""),
+        "sources": result.get("sources", []),
+        "latency_seconds": elapsed,
+    }
+
+
+# ---------------------------------------------------------------------------
 # History
 # ---------------------------------------------------------------------------
 

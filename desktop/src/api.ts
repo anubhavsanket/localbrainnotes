@@ -100,6 +100,31 @@ export async function ingestVault(): Promise<{ status: string; chunks: number }>
   return request("/api/vault/ingest", { method: "POST" });
 }
 
+export interface PreviewResponse {
+  query_id: string;
+  answer: string;
+  sources: string[];
+  latency_seconds: number;
+}
+
+export async function previewQuestion(question: string, workspace: string): Promise<PreviewResponse> {
+  return request("/api/query/preview", {
+    method: "POST",
+    body: JSON.stringify({ question, workspace }),
+  });
+}
+
+export async function approveAnswer(queryId: string): Promise<{ status: string; answer: string; sources: string[] }> {
+  return request(`/api/query/${queryId}/approve`, { method: "POST" });
+}
+
+export async function rejectAnswer(queryId: string, feedback: string): Promise<{ status: string; answer: string; sources: string[] }> {
+  return request(`/api/query/${queryId}/reject`, {
+    method: "POST",
+    body: JSON.stringify({ feedback }),
+  });
+}
+
 /** POST a question and consume the SSE token stream. */
 export async function streamQuestion(
   question: string,

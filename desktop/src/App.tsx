@@ -6,6 +6,9 @@ import {
   getHistory,
   clearHistory,
   ingestVault,
+  previewQuestion,
+  approveAnswer,
+  rejectAnswer,
 } from "./api";
 import { Markdown } from "./Markdown";
 import NotesView from "./NotesView";
@@ -25,6 +28,9 @@ export default function App() {
   const [backendOk, setBackendOk] = useState<boolean | null>(null);
   const [indexing, setIndexing] = useState(false);
   const [view, setView] = useState<"chat" | "notes">("chat");
+  const [reviewMode, setReviewMode] = useState(false);
+  const [pendingReview, setPendingReview] = useState<{ queryId: string; answer: string; sources: string[] } | null>(null);
+  const [reviewFeedback, setReviewFeedback] = useState("");
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -65,37 +71,90 @@ export default function App() {
     const aiMsg: Message = { role: "ai", content: "" };
     setMessages((prev) => [...prev, { role: "user", content: text }, aiMsg]);
 
-    let full = "";
+    if (reviewMode) {
+      try {
+        const preview = await previewQuestion(text, workspace);
+        setMessages((prev) => {
+          const next = [...prev];
+          next[next.length - 1] = { role: "ai", content: preview.answer, sources: preview.sources };
+          return next;
+        });
+        setPendingReview({ queryId: preview.query_id, answer: preview.answer, sources: preview.sources });
+      } catch (err) {
+        setMessages((prev) => {
+          const next = [...prev];
+          next[next.length - 1] = { role: "ai", content: `Error: ${(err as Error).message}` };
+          return next;
+        });
+      }
+    } else {
+      let full = "";
+      try {
+        await streamQuestion(text, workspace, {
+          onToken: (chunk) => {
+            full += chunk;
+            setMessages((prev) => {
+              const next = [...prev];
+              next[next.length - 1] = { ...next[next.length - 1], content: full };
+              return next;
+            });
+          },
+          onSources: (sources) => {
+            setMessages((prev) => {
+              const next = [...prev];
+              next[next.length - 1] = { ...next[next.length - 1], sources };
+              return next;
+            });
+          },
+        });
+      } catch (err) {
+        setMessages((prev) => {
+          const next = [...prev];
+          next[next.length - 1] = { role: "ai", content: `Error: ${(err as Error).message}` };
+          return next;
+        });
+      }
+    }
+    setSending(false);
+  }, [input, sending, backendOk, workspace, reviewMode]);
+
+  const onApprove = async () => {
+    if (!pendingReview) return;
     try {
-      await streamQuestion(text, workspace, {
-        onToken: (chunk) => {
-          full += chunk;
-          setMessages((prev) => {
-            const next = [...prev];
-            next[next.length - 1] = { ...next[next.length - 1], content: full };
-            return next;
-          });
-        },
-        onSources: (sources) => {
-          setMessages((prev) => {
-            const next = [...prev];
-            next[next.length - 1] = { ...next[next.length - 1], sources };
-            return next;
-          });
-        },
+      await approveAnswer(pendingReview.queryId);
+      setMessages((prev) => [...prev, { role: "system", content: "Answer approved and saved." }]);
+    } catch (err) {
+      setMessages((prev) => [...prev, { role: "system", content: `Error: ${(err as Error).message}` }]);
+    }
+    setPendingReview(null);
+    setReviewFeedback("");
+  };
+
+  const onReject = async () => {
+    if (!pendingReview) return;
+    const feedback = reviewFeedback.trim();
+    setPendingReview(null);
+    setReviewFeedback("");
+
+    const aiMsg: Message = { role: "ai", content: "Regenerating…" };
+    setMessages((prev) => [...prev, aiMsg]);
+
+    try {
+      const result = await rejectAnswer(pendingReview.queryId, feedback);
+      setMessages((prev) => {
+        const next = [...prev];
+        next[next.length - 1] = { role: "ai", content: result.answer, sources: result.sources };
+        return next;
       });
+      setPendingReview({ queryId: result.answer ? "" : "", answer: result.answer, sources: result.sources });
     } catch (err) {
       setMessages((prev) => {
         const next = [...prev];
-        next[next.length - 1] = {
-          role: "ai",
-          content: `Error: ${(err as Error).message}`,
-        };
+        next[next.length - 1] = { role: "ai", content: `Error: ${(err as Error).message}` };
         return next;
       });
     }
-    setSending(false);
-  }, [input, sending, backendOk, workspace]);
+  };
 
   const onClear = async () => {
     await clearHistory(workspace);
@@ -200,7 +259,37 @@ export default function App() {
           <button onClick={send} disabled={sending || !backendOk}>
             {sending ? "…" : "Send"}
           </button>
+          <label className="review-toggle">
+            <input type="checkbox" checked={reviewMode} onChange={(e) => setReviewMode(e.target.checked)} />
+            Review
+          </label>
         </footer>
+        {pendingReview && (
+          <div className="review-panel">
+            <div className="review-draft">
+              <div className="label">Draft answer — review before approving</div>
+              <Markdown text={pendingReview.answer} />
+              {pendingReview.sources.length > 0 && (
+                <details className="sources">
+                  <summary>Sources ({pendingReview.sources.length})</summary>
+                  {pendingReview.sources.map((s, j) => (
+                    <span key={j} className="tag">{s}</span>
+                  ))}
+                </details>
+              )}
+            </div>
+            <div className="review-actions">
+              <button className="review-approve" onClick={onApprove}>Approve</button>
+              <input
+                className="review-feedback"
+                placeholder="Feedback for regeneration (optional)…"
+                value={reviewFeedback}
+                onChange={(e) => setReviewFeedback(e.target.value)}
+              />
+              <button className="review-reject" onClick={onReject}>Reject & Regenerate</button>
+            </div>
+          </div>
+        )}
         </>
       )}
     </div>
