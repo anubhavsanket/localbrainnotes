@@ -44,4 +44,4 @@ jobs:
         run: npm ci
       - name: Type check
         working-directory: desktop
-        run: npm run tsc -- --noEmit
+        run: npx tsc --noEmit
