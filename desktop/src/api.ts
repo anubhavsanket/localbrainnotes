@@ -125,6 +125,27 @@ export async function rejectAnswer(queryId: string, feedback: string): Promise<{
   });
 }
 
+export interface HistoryExport {
+  workspace: string;
+  messages: { role: string; content: string; timestamp: number }[];
+  count: number;
+}
+
+export async function exportHistory(workspace: string): Promise<HistoryExport> {
+  return request(`/api/history/export?workspace=${encodeURIComponent(workspace)}`);
+}
+
+export async function importHistory(workspace: string, messages: { role: string; content: string; timestamp: number }[]): Promise<{ status: string; count: number }> {
+  return request(`/api/history/import?workspace=${encodeURIComponent(workspace)}`, {
+    method: "POST",
+    body: JSON.stringify({ messages }),
+  });
+}
+
+export async function historySummary(workspace: string): Promise<{ workspace: string; total_messages: number; last_question: string; last_answer: string }> {
+  return request(`/api/history/summary?workspace=${encodeURIComponent(workspace)}`);
+}
+
 /** POST a question and consume the SSE token stream. */
 export async function streamQuestion(
   question: string,

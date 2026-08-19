@@ -90,5 +90,8 @@ class Settings(BaseSettings):
     EVAL_LLM_BASE_URL: str | None = None
     EVAL_LLM_API_KEY: str | None = None
 
+    # --- Logging -------------------------------------------------------------
+    LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+
 
 settings = Settings()

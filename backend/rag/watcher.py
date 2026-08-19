@@ -5,6 +5,7 @@ events and updates the vector index on the fly.  A 500 ms debounce window
 prevents double-index on rapid saves (e.g. autosave + manual save within
 the same editor session).
 """
+import logging
 import threading
 import time
 from pathlib import Path
@@ -12,6 +13,8 @@ from pathlib import Path
 from config import settings
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
+
+logger = logging.getLogger(__name__)
 
 _DEBOUNCE_MS = 500
 _MARKDOWN_SUFFIXES = {".md", ".markdown"}
@@ -62,21 +65,21 @@ class _VaultHandler(FileSystemEventHandler):
             else:
                 self._index_file(path_str)
         except Exception as exc:  # noqa: BLE001
-            print(f"[watcher] {kind} {path_str}: {exc}")
+            logger.warning("%s %s: %s", kind, path_str, exc)
 
     def _index_file(self, path_str: str) -> None:
         from rag.ingester.vault import ingest_file
 
         note_id = str(Path(path_str).resolve().relative_to(self.vault_path).as_posix())
         count = ingest_file(path_str, str(self.vault_path))
-        print(f"[watcher] indexed {note_id}: {count} chunks")
+        logger.info("indexed %s: %d chunks", note_id, count)
 
     def _delete_chunks(self, path_str: str) -> None:
         from rag.vectorstore import vectorstore
 
         note_id = str(Path(path_str).resolve().relative_to(self.vault_path).as_posix())
         removed = vectorstore.delete_note_chunks(note_id)
-        print(f"[watcher] deleted {note_id}: {removed} chunks removed")
+        logger.info("deleted %s: %d chunks removed", note_id, removed)
 
 
 def start_watcher(
@@ -90,7 +93,7 @@ def start_watcher(
     observer.schedule(handler, path, recursive=True)
     observer.daemon = True
     observer.start()
-    print(f"[watcher] watching {path}")
+    logger.info("watching %s", path)
     return observer
 
 

@@ -192,6 +192,7 @@ All settings live in `backend/config.py` and are overridable via environment var
 | `WEB_SEARCH_ENABLED` | `true` | Allow the `tool` route (DuckDuckGo HTML, no API key) |
 | `MEMORY_WINDOW_SIZE` | `10` | Messages kept per workspace in SQLite |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Local model server |
+| `LOG_LEVEL` | `INFO` | Python logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`) |
 | `EVAL_JUDGE_PROVIDER` | `ollama` | RAGAS judge backend (or `openai` for any `/v1` endpoint) |
 
 ---

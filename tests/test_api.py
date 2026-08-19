@@ -459,6 +459,75 @@ class TestHumanInTheLoop:
         assert res.status_code == 404
 
 
+class TestHistoryExportImport:
+    def test_export_returns_all_messages(self, client, monkeypatch):
+        """GET /api/history/export returns full conversation history."""
+        import rag.graph as graph_mod
+
+        monkeypatch.setattr(graph_mod, "get_agent_graph", lambda llm=None: _FakeGraph())
+        # Seed two messages via approve flow
+        preview = client.post(
+            "/api/query/preview",
+            json={"question": "Hello", "workspace": "export_test"},
+        ).json()
+        client.post(f"/api/query/{preview['query_id']}/approve")
+
+        res = client.get("/api/history/export", params={"workspace": "export_test"})
+        assert res.status_code == 200
+        data = res.json()
+        assert data["workspace"] == "export_test"
+        assert data["count"] == 2
+        assert data["messages"][0]["role"] == "human"
+        assert data["messages"][1]["role"] == "ai"
+
+    def test_import_restores_messages(self, client):
+        """POST /api/history/import bulk-imports messages."""
+        messages = [
+            {"role": "human", "content": "Q1", "timestamp": 1000.0},
+            {"role": "ai", "content": "A1", "timestamp": 1001.0},
+        ]
+        res = client.post(
+            "/api/history/import",
+            params={"workspace": "import_test"},
+            json={"messages": messages},
+        )
+        assert res.status_code == 200
+        assert res.json()["count"] == 2
+
+        # Verify they appear in history
+        hist = client.get("/api/history", params={"workspace": "import_test"}).json()
+        assert hist["count"] == 2
+        assert hist["messages"][0]["content"] == "Q1"
+        assert hist["messages"][1]["content"] == "A1"
+
+    def test_import_empty_returns_400(self, client):
+        res = client.post(
+            "/api/history/import",
+            params={"workspace": "x"},
+            json={"messages": []},
+        )
+        assert res.status_code == 400
+
+    def test_summary_returns_last_qa(self, client, monkeypatch):
+        """GET /api/history/summary returns last question + answer."""
+        import rag.graph as graph_mod
+
+        monkeypatch.setattr(graph_mod, "get_agent_graph", lambda llm=None: _FakeGraph())
+        preview = client.post(
+            "/api/query/preview",
+            json={"question": "What is CRDT?", "workspace": "summary_test"},
+        ).json()
+        client.post(f"/api/query/{preview['query_id']}/approve")
+
+        res = client.get("/api/history/summary", params={"workspace": "summary_test"})
+        assert res.status_code == 200
+        data = res.json()
+        assert data["workspace"] == "summary_test"
+        assert data["total_messages"] == 2
+        assert "CRDT" in data["last_question"]
+        assert data["last_answer"] == "Hello from the agent."
+
+
 class TestNotesCRUD:
     """File-level note CRUD against a throwaway vault (see `notes_client`)."""
 

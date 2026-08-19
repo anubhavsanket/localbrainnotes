@@ -6,12 +6,15 @@ tracks every file in the vault, which workspace it belongs to, its mtime
 retrieval; this handles listing and bookkeeping.
 """
 import json
+import logging
 import os
 import tempfile
 from pathlib import Path
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _INDEX_PATH = _PROJECT_ROOT / "db" / "vault_index.json"
+
+logger = logging.getLogger(__name__)
 
 _index: dict[str, dict] = {}
 
@@ -106,7 +109,7 @@ def rebuild_vault_index_from_disk(vault_path: str) -> int:
         try:
             raw = file_path.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
-            print(f"[store] skipping non-UTF-8 file: {rel}")
+            logger.warning("skipping non-UTF-8 file: %s", rel)
             continue
         meta, _ = parse_frontmatter(raw)
         _index[rel] = {

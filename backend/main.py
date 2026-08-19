@@ -5,6 +5,7 @@ management, conversation history, and a health probe.  A file-system watcher
 is launched on startup to keep the vector index in sync with the vault on disk.
 """
 import json
+import logging
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -13,6 +14,8 @@ from config import settings
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+
+logger = logging.getLogger(__name__)
 from fastapi.staticfiles import StaticFiles
 from models.schemas import (
     NoteWrite,
@@ -29,6 +32,9 @@ from starlette.requests import Request
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Start the vault watcher on startup; stop it cleanly on shutdown."""
+    from logging_config import setup_logging
+
+    setup_logging()
     global _watcher
     try:
         from db.store import load_vault_index, rebuild_vault_index_from_disk
@@ -38,7 +44,7 @@ async def lifespan(app: FastAPI):
         rebuild_vault_index_from_disk(settings.VAULT_PATH)  # sync with disk
         _watcher = start_watcher(settings.VAULT_PATH)
     except Exception as exc:  # noqa: BLE001
-        print(f"[startup] watcher failed to start: {exc}")
+        logger.warning("watcher failed to start: %s", exc)
     yield
     if _watcher is not None:
         from rag.watcher import stop_watcher
@@ -271,7 +277,7 @@ def create_note(note: NoteWrite):
     except Exception as exc:  # noqa: BLE001
         # Keep the file + index entry (the note exists on disk; the watcher
         # will retry indexing), but surface the failure instead of hiding it.
-        print(f"[notes] inline ingest failed for {note.path}: {exc}")
+        logger.warning("inline ingest failed for %s: %s", note.path, exc)
         return {"path": rel, **record, "content": body, "warning": f"index failed: {exc}"}
 
     return {"path": rel, **record, "content": body}
@@ -291,7 +297,7 @@ def update_note(note_path: str, note: NoteWrite):
     try:
         ingest_file(str(file_path), str(settings.VAULT_PATH))
     except Exception as exc:  # noqa: BLE001
-        print(f"[notes] re-ingest failed for {note_path}: {exc}")
+        logger.warning("re-ingest failed for %s: %s", note_path, exc)
         return {"path": rel, **record, "content": note.content, "warning": f"index failed: {exc}"}
 
     return {"path": rel, **record, "content": note.content}
@@ -317,7 +323,7 @@ def delete_note(note_path: str):
     try:
         vectorstore.delete_note_chunks(rel)
     except Exception as exc:  # noqa: BLE001
-        print(f"[notes] chunk deletion failed for {note_path}: {exc}")
+        logger.warning("chunk deletion failed for %s: %s", note_path, exc)
     remove_note(rel)
     return {"status": "deleted", "path": rel}
 
@@ -582,6 +588,65 @@ def clear_history(workspace: str = "default"):
     memory = WorkspaceChatMemoryManager(workspace=workspace)
     memory.clear()
     return {"status": "cleared", "workspace": workspace}
+
+
+@app.get("/api/history/export")
+def export_history(workspace: str = "default"):
+    """Export all conversation messages for a workspace as JSON."""
+    from rag.memory import WorkspaceChatMemoryManager
+
+    memory = WorkspaceChatMemoryManager(workspace=workspace)
+    messages = memory.export_history()
+    return {
+        "workspace": workspace,
+        "messages": messages,
+        "count": len(messages),
+    }
+
+
+from pydantic import BaseModel
+
+
+class HistoryImportRequest(BaseModel):
+    messages: list[dict] = []
+
+
+@app.post("/api/history/import")
+def import_history(req: HistoryImportRequest, workspace: str = "default"):
+    """Bulk-import conversation messages into a workspace."""
+    from rag.memory import WorkspaceChatMemoryManager
+
+    messages = req.messages
+    if not messages:
+        raise HTTPException(status_code=400, detail="No messages provided")
+    memory = WorkspaceChatMemoryManager(workspace=workspace)
+    imported = memory.import_history(messages)
+    return {"status": "imported", "workspace": workspace, "count": imported}
+
+
+@app.get("/api/history/summary")
+def history_summary(workspace: str = "default"):
+    """Return a summary of the conversation for the workspace."""
+    from rag.memory import WorkspaceChatMemoryManager
+
+    memory = WorkspaceChatMemoryManager(workspace=workspace)
+    total = memory.count_messages()
+    all_msgs = memory.load_all_messages()
+    last_human = ""
+    last_ai = ""
+    for m in reversed(all_msgs):
+        if m["role"] == "human" and not last_human:
+            last_human = m["content"]
+        elif m["role"] == "ai" and not last_ai:
+            last_ai = m["content"]
+        if last_human and last_ai:
+            break
+    return {
+        "workspace": workspace,
+        "total_messages": total,
+        "last_question": last_human,
+        "last_answer": last_ai,
+    }
 
 
 # ---------------------------------------------------------------------------
