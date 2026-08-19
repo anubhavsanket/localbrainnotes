@@ -8,6 +8,9 @@ const DEFAULT_BACKEND = "http://127.0.0.1:8000";
 
 export const BACKEND_URL: string = import.meta.env.VITE_BACKEND_URL ?? DEFAULT_BACKEND;
 
+/** API v1 base path — all requests use /api/v1/ endpoints. */
+const API = "/api/v1";
+
 export interface QueryResponse {
   answer: string;
   sources: string[];
@@ -47,38 +50,38 @@ export interface HistoryResponse {
 }
 
 export async function health(): Promise<{ status: string; ollama_connected: boolean }> {
-  return request("/api/health");
+  return request(`${API}/health`);
 }
 
 export async function listWorkspaces(): Promise<WorkspaceResponse> {
-  return request("/api/workspaces");
+  return request(`${API}/workspaces`);
 }
 
 export async function listNotes(workspace?: string): Promise<NotesResponse> {
   const qs = workspace ? `?workspace=${encodeURIComponent(workspace)}` : "";
-  return request(`/api/notes${qs}`);
+  return request(`${API}/notes${qs}`);
 }
 
 export async function readNote(path: string): Promise<NoteFull> {
-  return request(`/api/notes/${encodeURI(path)}`);
+  return request(`${API}/notes/${encodeURI(path)}`);
 }
 
 export async function createNote(path: string, content: string, workspace = "default"): Promise<NoteFull> {
-  return request("/api/notes", {
+  return request(`${API}/notes`, {
     method: "POST",
     body: JSON.stringify({ path, content, workspace }),
   });
 }
 
 export async function updateNote(path: string, content: string, workspace = "default"): Promise<NoteFull> {
-  return request(`/api/notes/${encodeURI(path)}`, {
+  return request(`${API}/notes/${encodeURI(path)}`, {
     method: "PUT",
     body: JSON.stringify({ path, content, workspace }),
   });
 }
 
 export async function deleteNote(path: string): Promise<{ status: string; path: string }> {
-  return request(`/api/notes/${encodeURI(path)}`, { method: "DELETE" });
+  return request(`${API}/notes/${encodeURI(path)}`, { method: "DELETE" });
 }
 
 /** Encode a vault-relative path for use inside a URL segment. */
@@ -87,17 +90,17 @@ function encodeURI(path: string): string {
 }
 
 export async function getHistory(workspace: string): Promise<HistoryResponse> {
-  return request(`/api/history?workspace=${encodeURIComponent(workspace)}`);
+  return request(`${API}/history?workspace=${encodeURIComponent(workspace)}`);
 }
 
 export async function clearHistory(workspace: string): Promise<{ status: string }> {
-  return request(`/api/history?workspace=${encodeURIComponent(workspace)}`, {
+  return request(`${API}/history?workspace=${encodeURIComponent(workspace)}`, {
     method: "DELETE",
   });
 }
 
 export async function ingestVault(): Promise<{ status: string; chunks: number }> {
-  return request("/api/vault/ingest", { method: "POST" });
+  return request(`${API}/vault/ingest`, { method: "POST" });
 }
 
 export interface PreviewResponse {
@@ -108,18 +111,18 @@ export interface PreviewResponse {
 }
 
 export async function previewQuestion(question: string, workspace: string): Promise<PreviewResponse> {
-  return request("/api/query/preview", {
+  return request(`${API}/query/preview`, {
     method: "POST",
     body: JSON.stringify({ question, workspace }),
   });
 }
 
 export async function approveAnswer(queryId: string): Promise<{ status: string; answer: string; sources: string[] }> {
-  return request(`/api/query/${queryId}/approve`, { method: "POST" });
+  return request(`${API}/query/${queryId}/approve`, { method: "POST" });
 }
 
 export async function rejectAnswer(queryId: string, feedback: string): Promise<{ status: string; answer: string; sources: string[] }> {
-  return request(`/api/query/${queryId}/reject`, {
+  return request(`${API}/query/${queryId}/reject`, {
     method: "POST",
     body: JSON.stringify({ feedback }),
   });
@@ -132,18 +135,18 @@ export interface HistoryExport {
 }
 
 export async function exportHistory(workspace: string): Promise<HistoryExport> {
-  return request(`/api/history/export?workspace=${encodeURIComponent(workspace)}`);
+  return request(`${API}/history/export?workspace=${encodeURIComponent(workspace)}`);
 }
 
 export async function importHistory(workspace: string, messages: { role: string; content: string; timestamp: number }[]): Promise<{ status: string; count: number }> {
-  return request(`/api/history/import?workspace=${encodeURIComponent(workspace)}`, {
+  return request(`${API}/history/import?workspace=${encodeURIComponent(workspace)}`, {
     method: "POST",
     body: JSON.stringify({ messages }),
   });
 }
 
 export async function historySummary(workspace: string): Promise<{ workspace: string; total_messages: number; last_question: string; last_answer: string }> {
-  return request(`/api/history/summary?workspace=${encodeURIComponent(workspace)}`);
+  return request(`${API}/history/summary?workspace=${encodeURIComponent(workspace)}`);
 }
 
 /** POST a question and consume the SSE token stream. */
@@ -155,7 +158,7 @@ export async function streamQuestion(
     onSources: (sources: string[]) => void;
   }
 ): Promise<void> {
-  const res = await fetch(`${BACKEND_URL}/api/query/stream`, {
+  const res = await fetch(`${BACKEND_URL}${API}/query/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ question, workspace }),

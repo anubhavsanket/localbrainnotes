@@ -2,7 +2,7 @@
 //!
 //! Responsibilities:
 //!   1. On startup, spawn the Python FastAPI backend as a local sidecar
-//!      (`backend/main.py`) on 127.0.0.1:8000 and wait for `/api/health`.
+//!      (`backend/main.py`) on 127.0.0.1:8000 and wait for `/api/v1/health`.
 //!   2. Open the webview window hosting the React chat UI.
 //!   3. On exit, kill the backend child process.
 
@@ -65,7 +65,7 @@ fn backend_alive() -> bool {
     )
 }
 
-/// Spawn `python backend/main.py`, then poll until `/api/health` responds.
+/// Spawn `python backend/main.py`, then poll until `/api/v1/health` responds.
 fn spawn_backend() -> Option<Child> {
     let py = python_bin();
     let main = backend_main();

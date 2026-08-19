@@ -11,7 +11,7 @@ LocalBrain indexes an Obsidian-style markdown vault using a LangGraph agent loop
 ```
 ┌───────────────────────────────────────────────────────────────────┐
 │                        FastAPI (main.py)                          │
-│  POST /api/query   POST /api/vault/ingest   GET /api/health     │
+│  POST /api/v1/query   POST /api/v1/vault/ingest   GET /api/v1/health     │
 └──────┬────────────────────────────┬──────────────────────────────┘
        │                            │
        ▼                            ▼
@@ -96,12 +96,14 @@ cd backend
 python main.py                   # starts on http://localhost:8000
 ```
 
+All API routes are versioned under `/api/v1/`. The legacy `/api/` prefix is kept for backward compatibility.
+
 Open `http://localhost:8000` in a browser for the chat UI.
 
 ### Index your vault
 
 ```bash
-curl -X POST http://localhost:8000/api/vault/ingest
+curl -X POST http://localhost:8000/api/v1/vault/ingest
 ```
 
 Or set `VAULT_PATH` in `.env` to point at your Obsidian vault.
@@ -109,7 +111,7 @@ Or set `VAULT_PATH` in `.env` to point at your Obsidian vault.
 ### Query
 
 ```bash
-curl -X POST http://localhost:8000/api/query \
+curl -X POST http://localhost:8000/api/v1/query \
   -H "Content-Type: application/json" \
   -d '{"question": "What decisions were made?", "workspace": "work"}'
 ```
@@ -152,10 +154,10 @@ to `["project-alpha"]`, so string tags are handled the same as list tags.
 
 | Source | Route | Description |
 |--------|-------|-------------|
-| Markdown vault | `POST /api/vault/ingest` | Walk vault, parse frontmatter, chunk by headings |
-| Single markdown file | `POST /api/vault/ingest/file` | Index one note by path — must resolve **inside** `VAULT_PATH` (escapes rejected) |
-| PDF | `POST /api/vault/ingest/pdf` | PyMuPDF extraction + chunking (+ Tesseract OCR fallback for image-only PDFs) |
-| YouTube | `POST /api/vault/ingest/youtube` | Transcript API + timestamped chunks |
+| Markdown vault | `POST /api/v1/vault/ingest` | Walk vault, parse frontmatter, chunk by headings |
+| Single markdown file | `POST /api/v1/vault/ingest/file` | Index one note by path — must resolve **inside** `VAULT_PATH` (escapes rejected) |
+| PDF | `POST /api/v1/vault/ingest/pdf` | PyMuPDF extraction + chunking (+ Tesseract OCR fallback for image-only PDFs) |
+| YouTube | `POST /api/v1/vault/ingest/youtube` | Transcript API + timestamped chunks |
 
 ## Notes (file CRUD)
 
@@ -164,11 +166,11 @@ re-indexes on write so edits are immediately searchable.
 
 | Method | Route | Description |
 |--------|-------|-------------|
-| `GET` | `/api/notes` | List notes (optionally `?workspace=X`) |
-| `GET` | `/api/notes/{path}` | Read note content + metadata |
-| `POST` | `/api/notes` | Create a note file |
-| `PUT` | `/api/notes/{path}` | Overwrite content + re-index |
-| `DELETE` | `/api/notes/{path}` | Delete file + drop vector chunks |
+| `GET` | `/api/v1/notes` | List notes (`?workspace=X&offset=0&limit=50`) |
+| `GET` | `/api/v1/notes/{path}` | Read note content + metadata |
+| `POST` | `/api/v1/notes` | Create a note file |
+| `PUT` | `/api/v1/notes/{path}` | Overwrite content + re-index |
+| `DELETE` | `/api/v1/notes/{path}` | Delete file + drop vector chunks |
 
 Path safety: note paths are resolved inside `VAULT_PATH` and escapes are rejected.
 
@@ -229,7 +231,7 @@ cloud judge. Metrics: `faithfulness`, `answer_relevancy`, `context_recall`,
 ## Desktop App (Tauri + React)
 
 `desktop/` is a native Tauri v2 shell around the FastAPI backend. The Rust
-sidecar spawns `backend/main.py` on startup, waits for `/api/health`, opens the
+sidecar spawns `backend/main.py` on startup, waits for `/api/v1/health`, opens the
 native window, and kills the backend on exit. The React UI provides **Chat** and
 **Notes** views.
 
@@ -244,6 +246,31 @@ npm run tauri build    # production installer
 ```
 
 See `desktop/README.md` for the full setup.
+
+---
+
+## Docker
+
+Run the full stack with Docker Compose:
+
+```bash
+docker compose up -d
+```
+
+This starts:
+- **Backend** on `http://localhost:8000` (FastAPI + ChromaDB)
+- **Ollama** on `http://localhost:11434` (with auto-pull of models)
+- **Frontend** on `http://localhost:3000` (nginx serving static files)
+
+First run pulls Ollama images (~2 GB) and downloads the LLM + embedding models.
+
+```bash
+# Stop
+docker compose down
+
+# Stop and remove volumes
+docker compose down -v
+```
 
 ---
 
@@ -295,9 +322,12 @@ LocalBrainNotes/
 - ✅ Local Ollama-based RAGAS judge (consistent offline evals)
 - ✅ Vanilla frontend parity (full Notes CRUD, conversation history, health indicator)
 - ✅ Security hardening (path traversal guards on all CRUD endpoints)
+- ✅ Human-in-the-loop review (preview → approve/reject)
+- ✅ GitHub Actions CI (backend tests + tsc lint)
+- ✅ Structured logging (Python logging, configurable LOG_LEVEL)
+- ✅ Memory improvements (thread-safe SQLite, conversation export/import)
 
 **Planned:**
-- **Phase F+**: human-in-the-loop review via LangGraph interrupts
 - **Phase G**: Obsidian plugin for in-vault chat
 - **Phase H**: CRDT-based sync layer for multi-device vaults
 

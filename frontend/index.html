@@ -245,7 +245,7 @@
 
 <script>
 // ===== API helpers ==========================================================
-const API = '';
+const API = '/api/v1';
 async function api(path, init) {
   const res = await fetch(API + path, { headers: { 'Content-Type': 'application/json' }, ...init });
   if (!res.ok) {
@@ -327,7 +327,7 @@ function switchView(view) {
 
 // ===== Health check =========================================================
 async function checkHealth() {
-  try { const h = await api('/api/health'); backendOk = h.status === 'ok'; }
+  try { const h = await api('/health'); backendOk = h.status === 'ok'; }
   catch { backendOk = false; }
   healthDot.className = 'dot ' + (backendOk ? 'ok' : 'err');
   healthDot.title = backendOk ? 'backend up' : 'backend down';
@@ -336,7 +336,7 @@ async function checkHealth() {
 // ===== Workspaces ===========================================================
 async function loadWorkspaces() {
   try {
-    const data = await api('/api/workspaces');
+    const data = await api('/workspaces');
     workspaces = data.workspaces.includes('default') ? data.workspaces : [...data.workspaces, 'default'];
   } catch {}
   wsSel.innerHTML = '';
@@ -369,7 +369,7 @@ function addMsg(role, content, sources) {
 
 async function loadHistory() {
   try {
-    const data = await api('/api/history?workspace=' + encodeURIComponent(workspace));
+    const data = await api('/history?workspace=' + encodeURIComponent(workspace));
     messages = [];
     data.messages.filter(m => m.role==='human'||m.role==='ai').forEach(m => {
       messages.push({ role: m.role==='human'?'user':'ai', content: m.content });
@@ -406,7 +406,7 @@ async function sendStream(text) {
   const body = aiDiv.querySelector('.md');
   let full = '';
   try {
-    const res = await fetch(API + '/api/query/stream', {
+    const res = await fetch(API + '/query/stream', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ question: text, workspace }),
     });
@@ -428,7 +428,7 @@ async function sendPreview(text) {
   const body = aiDiv.querySelector('.md');
   body.textContent = 'Generating draft…';
   try {
-    const data = await api('/api/query/preview', { method: 'POST', body: JSON.stringify({ question: text, workspace }) });
+    const data = await api('/query/preview', { method: 'POST', body: JSON.stringify({ question: text, workspace }) });
     body.innerHTML = renderMarkdown(data.answer);
     showReviewPanel(data.query_id, data.answer, data.sources);
   } catch (err) { body.textContent = 'Error: ' + err.message; }
@@ -483,7 +483,7 @@ async function approveReview(queryId) {
   const panel = document.getElementById('review-panel');
   panel.classList.add('hidden');
   try {
-    const data = await api('/api/query/' + queryId + '/approve', { method: 'POST' });
+    const data = await api('/query/' + queryId + '/approve', { method: 'POST' });
     messages.push({ role: 'ai', content: data.answer, sources: data.sources });
     addMsg('system', 'Answer approved and saved to conversation history.');
   } catch (err) { addMsg('system', 'Error: ' + err.message); }
@@ -497,7 +497,7 @@ async function rejectReview(queryId) {
   const body = aiDiv.querySelector('.md');
   body.textContent = 'Regenerating with feedback…';
   try {
-    const data = await api('/api/query/' + queryId + '/reject', {
+    const data = await api('/query/' + queryId + '/reject', {
       method: 'POST', body: JSON.stringify({ feedback }),
     });
     body.innerHTML = renderMarkdown(data.answer);
@@ -509,7 +509,7 @@ async function rejectReview(queryId) {
 // ===== Notes ================================================================
 async function refreshNotes() {
   try {
-    const data = await api('/api/notes' + (workspace ? '?workspace=' + encodeURIComponent(workspace) : ''));
+    const data = await api('/notes' + (workspace ? '?workspace=' + encodeURIComponent(workspace) : ''));
     const byWs = new Map();
     for (const n of data.notes) { const list = byWs.get(n.workspace) || []; list.push(n); byWs.set(n.workspace, list); }
     notesGroups = [...byWs.entries()].map(([name, notes]) => ({ workspace: name, notes: notes.sort((a,b) => a.title.localeCompare(b.title)) })).sort((a,b) => a.workspace.localeCompare(b.workspace));
@@ -534,7 +534,7 @@ function renderNotesList(filter) {
 
 async function openNote(path) {
   try {
-    const note = await api('/api/notes/' + encodeURI(path));
+    const note = await api('/notes/' + encodeURI(path));
     selectedNote = path; noteContent = note.content; noteDirty = false; notePreview = false;
     renderNotesEditor();
   } catch (e) { alert(e.message); }
@@ -563,7 +563,7 @@ function renderNotesEditor() {
 async function saveNote() {
   if (!selectedNote || !noteDirty) return;
   try {
-    const res = await api('/api/notes/' + encodeURI(selectedNote), { method: 'PUT', body: JSON.stringify({ path: selectedNote, content: noteContent, workspace }) });
+    const res = await api('/notes/' + encodeURI(selectedNote), { method: 'PUT', body: JSON.stringify({ path: selectedNote, content: noteContent, workspace }) });
     noteContent = res.content; noteDirty = false;
     renderNotesEditor(); refreshNotes();
     // flash "Saved" briefly
@@ -576,7 +576,7 @@ async function deleteNote() {
   if (!selectedNote) return;
   if (!confirm('Delete "' + selectedNote + '"? This removes the file and its index.')) return;
   try {
-    await api('/api/notes/' + encodeURI(selectedNote), { method: 'DELETE' });
+    await api('/notes/' + encodeURI(selectedNote), { method: 'DELETE' });
     selectedNote = null; noteContent = ''; noteDirty = false; renderNotesEditor(); refreshNotes();
   } catch (e) { alert(e.message); }
 }
@@ -586,7 +586,7 @@ async function createNote() {
   const title = (titleInput.value.trim() || 'untitled-' + Date.now()).replace(/[\\/:*?"<>|]/g, '-');
   const path = (workspace === 'default' ? '' : workspace + '/') + title + '.md';
   try {
-    const res = await api('/api/notes', { method: 'POST', body: JSON.stringify({ path, content: '# ' + title + '\n\n', workspace }) });
+    const res = await api('/notes', { method: 'POST', body: JSON.stringify({ path, content: '# ' + title + '\n\n', workspace }) });
     titleInput.value = '';
     await refreshNotes();
     openNote(res.path);
@@ -604,12 +604,12 @@ async function createNote() {
   document.getElementById('input').onkeydown = e => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); } };
   document.getElementById('input').oninput = function() { this.style.height = 'auto'; this.style.height = Math.min(this.scrollHeight, 120) + 'px'; };
   document.getElementById('btn-clear').onclick = async () => {
-    await api('/api/history?workspace=' + encodeURIComponent(workspace), { method: 'DELETE' });
+    await api('/history?workspace=' + encodeURIComponent(workspace), { method: 'DELETE' });
     messages = []; chatEl.innerHTML = ''; addMsg('system', 'History cleared.');
   };
   document.getElementById('btn-reindex').onclick = async () => {
     btnReindex.textContent = 'Indexing…';
-    try { const res = await api('/api/vault/ingest', { method: 'POST' }); addMsg('system', 'Indexed ' + res.chunks + ' chunks from the vault.'); }
+    try { const res = await api('/vault/ingest', { method: 'POST' }); addMsg('system', 'Indexed ' + res.chunks + ' chunks from the vault.'); }
     catch (e) { addMsg('system', 'Index failed: ' + e.message); }
     btnReindex.textContent = 'Re-index';
   };

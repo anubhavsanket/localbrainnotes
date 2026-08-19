@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from config import settings
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import APIRouter, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
@@ -55,12 +55,29 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="LocalBrain", version="0.1.0", lifespan=lifespan)
 
+# Rate limiting: 30 queries/minute per IP on query endpoints.
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address, default_limits=["30/minute"])
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ---------------------------------------------------------------------------
+# Versioned API router
+# ---------------------------------------------------------------------------
+
+router = APIRouter()
+app.include_router(router, prefix="/api")    # backward-compat
+app.include_router(router, prefix="/api/v1")  # versioned
 
 # ---------------------------------------------------------------------------
 # Watcher lifecycle
@@ -74,7 +91,7 @@ _watcher = None
 # ---------------------------------------------------------------------------
 
 
-@app.post("/api/vault/ingest")
+@router.post("/vault/ingest")
 def ingest_vault(
     workspace: str | None = Query(None, description="Scope ingestion to a workspace"),
 ):
@@ -88,7 +105,7 @@ def ingest_vault(
     return {"status": "indexed", "chunks": count, "vault_path": settings.VAULT_PATH}
 
 
-@app.post("/api/vault/ingest/file")
+@router.post("/vault/ingest/file")
 def ingest_single_file(path: str):
     """Ingest a single markdown file into the vector store.
 
@@ -116,7 +133,7 @@ def ingest_single_file(path: str):
     return {"status": "indexed", "chunks": count, "file": path}
 
 
-@app.post("/api/vault/ingest/pdf")
+@router.post("/vault/ingest/pdf")
 def ingest_pdf(file_path: str, workspace: str = "default"):
     """Index a PDF file into the vector store.
 
@@ -131,7 +148,7 @@ def ingest_pdf(file_path: str, workspace: str = "default"):
     return {"status": "indexed", "chunks": count, "file": file_path}
 
 
-@app.post("/api/vault/ingest/youtube")
+@router.post("/vault/ingest/youtube")
 def ingest_youtube(url: str, workspace: str = "default"):
     """Index a YouTube transcript into the vector store."""
     from rag.ingester.youtube import ingest_youtube as _ingest_youtube
@@ -141,7 +158,7 @@ def ingest_youtube(url: str, workspace: str = "default"):
     return {"status": "indexed", "chunks": count, "url": url}
 
 
-@app.get("/api/workspaces")
+@router.get("/workspaces")
 def list_workspaces():
     """List all known workspaces from the vault index."""
     from db.store import get_notes
@@ -151,13 +168,24 @@ def list_workspaces():
     return WorkspaceResponse(workspaces=workspaces, count=len(workspaces))
 
 
-@app.get("/api/notes")
-def list_notes(workspace: str | None = Query(None)):
-    """List notes in a workspace (or all notes)."""
+@router.get("/notes")
+def list_notes(
+    workspace: str | None = Query(None),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+):
+    """List notes in a workspace (or all notes), with pagination."""
     from db.store import get_notes
 
-    notes = get_notes(workspace)
-    return {"notes": notes, "count": len(notes)}
+    all_notes = get_notes(workspace)
+    total = len(all_notes)
+    notes = all_notes[offset : offset + limit]
+    return {
+        "notes": notes,
+        "count": total,
+        "offset": offset,
+        "limit": limit,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -241,7 +269,7 @@ def _validate_path_within_vault(file_path: str) -> Path:
     return candidate
 
 
-@app.get("/api/notes/{note_path:path}")
+@router.get("/notes/{note_path:path}")
 def read_note(note_path: str):
     """Read a note's markdown content and metadata from the vault."""
     file_path = _resolve_vault_path(note_path)
@@ -253,7 +281,7 @@ def read_note(note_path: str):
     return {"path": rel, **record, "content": content}
 
 
-@app.post("/api/notes")
+@router.post("/notes")
 def create_note(note: NoteWrite):
     """Create a new note file in the vault (parent dirs auto-created)."""
     from db.store import update_note
@@ -283,7 +311,7 @@ def create_note(note: NoteWrite):
     return {"path": rel, **record, "content": body}
 
 
-@app.put("/api/notes/{note_path:path}")
+@router.put("/notes/{note_path:path}")
 def update_note(note_path: str, note: NoteWrite):
     """Overwrite a note's content; re-indexes the vector store."""
     from rag.ingester.vault import ingest_file
@@ -303,7 +331,7 @@ def update_note(note_path: str, note: NoteWrite):
     return {"path": rel, **record, "content": note.content}
 
 
-@app.delete("/api/notes/{note_path:path}")
+@router.delete("/notes/{note_path:path}")
 def delete_note(note_path: str):
     """Delete a note file from the vault and drop its vector chunks.
 
@@ -347,8 +375,9 @@ def _build_agent_graph():
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
-@app.post("/api/query", response_model=QueryResponse)
-def query_notes(req: QueryRequest):
+@limiter.limit("30/minute")
+@router.post("/query", response_model=QueryResponse)
+def query_notes(request: Request, req: QueryRequest):
     """Run the full agent loop and return a structured answer."""
     from rag.memory import WorkspaceChatMemoryManager
 
@@ -377,7 +406,8 @@ def query_notes(req: QueryRequest):
     )
 
 
-@app.post("/api/query/stream")
+@limiter.limit("30/minute")
+@router.post("/query/stream")
 async def query_notes_stream(req: QueryRequest, request: Request):
     """SSE streaming variant — yields JSON lines as the agent runs.
 
@@ -445,8 +475,9 @@ def _cleanup_stale_reviews() -> None:
         _pending_reviews.pop(k, None)
 
 
-@app.post("/api/query/preview")
-def query_preview(req: QueryRequest):
+@limiter.limit("10/minute")
+@router.post("/query/preview")
+def query_preview(request: Request, req: QueryRequest):
     """Run the agent loop and return a draft answer for human review.
 
     The draft is NOT saved to conversation memory.  The caller must later
@@ -490,7 +521,7 @@ def query_preview(req: QueryRequest):
     }
 
 
-@app.post("/api/query/{query_id}/approve")
+@router.post("/query/{query_id}/approve")
 def approve_answer(query_id: str):
     """Approve a previewed answer — saves it to conversation memory and
     returns it as the final response."""
@@ -512,7 +543,7 @@ def approve_answer(query_id: str):
     }
 
 
-@app.post("/api/query/{query_id}/reject")
+@router.post("/query/{query_id}/reject")
 def reject_answer(query_id: str, feedback: str = ""):
     """Reject a previewed answer — re-runs the agent with the user's
     feedback appended to the question, then saves the new answer."""
@@ -564,7 +595,7 @@ def reject_answer(query_id: str, feedback: str = ""):
 # ---------------------------------------------------------------------------
 
 
-@app.get("/api/history")
+@router.get("/history")
 def get_history(workspace: str = "default"):
     """Return recent conversation messages for a workspace."""
     from rag.memory import WorkspaceChatMemoryManager
@@ -580,7 +611,7 @@ def get_history(workspace: str = "default"):
     }
 
 
-@app.delete("/api/history")
+@router.delete("/history")
 def clear_history(workspace: str = "default"):
     """Clear conversation history for a workspace."""
     from rag.memory import WorkspaceChatMemoryManager
@@ -590,7 +621,7 @@ def clear_history(workspace: str = "default"):
     return {"status": "cleared", "workspace": workspace}
 
 
-@app.get("/api/history/export")
+@router.get("/history/export")
 def export_history(workspace: str = "default"):
     """Export all conversation messages for a workspace as JSON."""
     from rag.memory import WorkspaceChatMemoryManager
@@ -611,7 +642,7 @@ class HistoryImportRequest(BaseModel):
     messages: list[dict] = []
 
 
-@app.post("/api/history/import")
+@router.post("/history/import")
 def import_history(req: HistoryImportRequest, workspace: str = "default"):
     """Bulk-import conversation messages into a workspace."""
     from rag.memory import WorkspaceChatMemoryManager
@@ -624,7 +655,7 @@ def import_history(req: HistoryImportRequest, workspace: str = "default"):
     return {"status": "imported", "workspace": workspace, "count": imported}
 
 
-@app.get("/api/history/summary")
+@router.get("/history/summary")
 def history_summary(workspace: str = "default"):
     """Return a summary of the conversation for the workspace."""
     from rag.memory import WorkspaceChatMemoryManager
@@ -654,7 +685,7 @@ def history_summary(workspace: str = "default"):
 # ---------------------------------------------------------------------------
 
 
-@app.get("/api/health")
+@router.get("/health")
 def health():
     """System health probe: vault path, note count, Ollama connectivity."""
     from db.store import get_notes

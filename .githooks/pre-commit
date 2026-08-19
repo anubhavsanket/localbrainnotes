@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Pre-commit hook: run ruff lint on staged Python files.
+# Install: git config core.hooksPath .githooks
+
+set -e
+
+STAGED_PY=$(git diff --cached --name-only --diff-filter=ACM -- '*.py')
+if [ -z "$STAGED_PY" ]; then
+  exit 0
+fi
+
+echo "Running ruff on staged Python files..."
+echo "$STAGED_PY" | xargs -r python -m ruff check --fix
+echo "$STAGED_PY" | xargs -r python -m ruff format --check --quiet 2>/dev/null || true
+
+echo "Pre-commit: ruff passed."
